@@ -84,3 +84,17 @@ export function getUsageStats(): {
   `);
   return stmt.get() as { total_tokens: number; total_jobs: number; avg_latency: number };
 }
+
+export function getJobsToday(): number {
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const startTimestamp = startOfDay.getTime();
+  
+  const stmt = db.prepare(`
+    SELECT COUNT(*) as count
+    FROM usage_events
+    WHERE created_at >= ? AND status = 'success'
+  `);
+  const result = stmt.get(startTimestamp) as { count: number };
+  return result.count;
+}

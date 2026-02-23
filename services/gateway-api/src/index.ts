@@ -48,6 +48,53 @@ app.addHook('onRequest', async (request, reply) => {
 // Health check
 app.get('/health', async () => ({ status: 'ok', service: 'gateway-api' }));
 
+// Stats endpoint (public, used by web UI)
+let cachedStats: any = null;
+let statsCacheTime = 0;
+const STATS_CACHE_TTL = 2000; // 2 seconds
+
+app.get('/stats', async () => {
+  const now = Date.now();
+  
+  // Return cached stats if fresh
+  if (cachedStats && now - statsCacheTime < STATS_CACHE_TTL) {
+    return cachedStats;
+  }
+  
+  try {
+    // Fetch router stats
+    const ROUTER_URL = process.env.ROUTER_URL || 'http://localhost:3002';
+    const routerRes = await fetch(`${ROUTER_URL}/stats`);
+    const routerStats = routerRes.ok ? await routerRes.json() : { nodes: 0 };
+    
+    // Fetch local usage stats
+    const { getUsageStats, getJobsToday } = await import('./db/usage.js');
+    const usageStats = getUsageStats();
+    
+    cachedStats = {
+      nodes: routerStats.nodes || 0,
+      jobs_today: getJobsToday(),
+      total_jobs: usageStats.total_jobs,
+      avg_latency_ms: Math.round(usageStats.avg_latency),
+      total_tokens: usageStats.total_tokens,
+      updated_at: now
+    };
+    
+    statsCacheTime = now;
+    return cachedStats;
+  } catch (error) {
+    // Return cached or fallback
+    return cachedStats || {
+      nodes: 0,
+      jobs_today: 0,
+      total_jobs: 0,
+      avg_latency_ms: 0,
+      total_tokens: 0,
+      updated_at: now
+    };
+  }
+});
+
 // Generate API key
 app.post('/auth/api-key', async (request, reply) => {
   const { email, wallet } = request.body as { email?: string; wallet?: string };

@@ -22,7 +22,7 @@ function App() {
       const res = await fetch(`${API_URL}/stats`);
       if (res.ok) {
         const data = await res.json();
-        setStats({ nodes: data.nodes || 0, jobs: data.total_jobs || 0 });
+        setStats({ nodes: data.nodes || 0, jobs: data.jobs_today || 0 });
       }
     } catch {
       // ignore
