@@ -1,0 +1,27 @@
+[Unit]
+Description=Synapse Settlement Daemon
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=synapse
+WorkingDirectory=/opt/synapse/services/settlement
+Environment=NODE_ENV=production
+EnvironmentFile=/opt/synapse/config/settlement.env
+ExecStart=/usr/bin/node dist/daemon.js
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=synapse-settlement
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/synapse/data
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
