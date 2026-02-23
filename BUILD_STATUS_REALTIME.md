@@ -283,3 +283,44 @@ fbdbffe PHASES 11-18: Network telemetry, GPU pressure tracking, rate limiting (1
 3. 
 
 ---
+
+---
+
+## FULL PRODUCTION BUILD — IN PROGRESS
+**Time**: 2026-02-23 20:35+10
+
+### Agent-02 Active:
+- **Phase 3**: HSK Smart Contracts (ERC20 + Treasury + Escrow + NodeRewards)
+- **Status**: Writing ComputeEscrow.sol, Treasury.sol complete
+- **Runtime**: 35 minutes
+
+### Completed by Main Agent:
+
+| Phase | Status | Deliverable |
+|-------|--------|-------------|
+| **0** | ✅ | Repo canonicalization - /services declared canonical, legacy in /archive |
+| **1** | ✅ | Security baseline - TLS configs, secrets mgmt, Argon2, rate limiting, abuse detection |
+| **2** | 🔄 | Database - Prisma schema, Postgres + Redis compose, HA setup |
+| **Viral** | ✅ | Terminal-style landing page (already shipped earlier) |
+
+### Commits Today:
+```
+28b9573 PHASE 2: Database infrastructure - Prisma schema for PostgreSQL, Redis caching, HA setup
+67ef82e PHASE 1: Security baseline - TLS configs, secrets mgmt, Argon2 hashing, rate limiting
+903fea9 PHASE 0: Repo canonicalization - archive legacy folders, update README, add CONTRIBUTING.md
+```
+
+### Critical Path (Remaining):
+- [ ] Phase 3: HSK Contracts (agent-02 working)
+- [ ] Phase 3 cont: Merkle root pipeline, claim contract
+- [ ] Phase 4: Token payout model integration
+- [ ] Phase 5: Node trust + fraud prevention (challenge jobs)
+- [ ] Phase 6: Router federation (regional routers + coordinator)
+- [ ] Phase 8: Billing system (real usage tracking)
+- [ ] Phase 11-12: SRE observability + dashboards
+- [ ] Phase 12: Kubernetes + Terraform
+- [ ] Phase 13: Security audit prep
+- [ ] Phase 14: Load testing
+
+### Blockers:
+- None currently. Agent-02 progressing on contracts.
