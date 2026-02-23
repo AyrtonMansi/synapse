@@ -20,6 +20,7 @@
     "@types/node": "^20.11.0",
     "@types/uuid": "^9.0.8",
     "@types/bcryptjs": "^2.4.6",
+    "@types/better-sqlite3": "^7.6.9",
     "typescript": "^5.3.3",
     "tsx": "^4.7.0"
   }
