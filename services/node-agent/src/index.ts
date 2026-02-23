@@ -25,8 +25,22 @@ interface BenchmarkResult {
   model: string;
   hardware: string;
   completed: boolean;
+  timestamp: number;
 }
 let benchmarkResult: BenchmarkResult | null = null;
+
+// PHASE 9: Node Self-Optimisation
+interface GPUInfo {
+  vram_total_mb?: number;
+  vram_used_mb?: number;
+  vram_free_mb?: number;
+  gpu_utilization?: number;
+  temperature?: number;
+}
+let gpuInfo: GPUInfo = {};
+let pendingJobs: string[] = []; // Queue depth tracking
+let degradationCount = 0;
+const DEGRADATION_THRESHOLD = 3; // Re-benchmark after 3 degradation events
 
 /**
  * Initialize node keypair - load from volume or generate new
@@ -175,12 +189,13 @@ async function runBenchmark(): Promise<BenchmarkResult> {
     
     const tokPerSec = totalTokens / (totalMs / 1000);
     console.log(`P1.3: Benchmark complete - ${tokPerSec.toFixed(2)} tok/sec`);
-    
+
     return {
       tok_per_sec: Math.round(tokPerSec * 100) / 100,
       model,
       hardware,
-      completed: true
+      completed: true,
+      timestamp: Date.now()
     };
   } catch (err) {
     console.error('P1.3: Benchmark failed:', err);
@@ -188,7 +203,8 @@ async function runBenchmark(): Promise<BenchmarkResult> {
       tok_per_sec: 0,
       model,
       hardware,
-      completed: false
+      completed: false,
+      timestamp: Date.now()
     };
   }
 }
@@ -328,11 +344,18 @@ setInterval(() => {
     const now = Date.now();
     const wallMs = now - wallMsStart;
     const utilization = wallMs > 0 ? Math.round((busyMsTotal / wallMs) * 1000) / 10 : 0;
-    
+
     // P1.3: Calculate jobs per hour
     const hoursRunning = wallMs / (1000 * 60 * 60);
     const jobsPerHour = hoursRunning > 0 ? Math.round((jobsCompleted / hoursRunning) * 10) / 10 : 0;
-    
+
+    // PHASE 9: Update GPU info periodically
+    detectGPUInfo().then(info => {
+      gpuInfo = info;
+    }).catch(() => {
+      // Ignore GPU detection errors
+    });
+
     ws.send(JSON.stringify({
       type: 'HEARTBEAT',
       load: currentJobStartMs ? 1 : 0, // Current load (1 if busy, 0 if idle)
@@ -345,14 +368,52 @@ setInterval(() => {
       // P1.3: Include utilization metrics
       utilization,
       jobs_completed: jobsCompleted,
-      jobs_per_hour: jobsPerHour
+      jobs_per_hour: jobsPerHour,
+      // PHASE 9: Include queue depth and GPU info
+      queue_depth: pendingJobs.length,
+      gpu_info: gpuInfo.vram_free_mb ? {
+        vram_free_mb: gpuInfo.vram_free_mb,
+        vram_total_mb: gpuInfo.vram_total_mb,
+        gpu_utilization: gpuInfo.gpu_utilization
+      } : undefined,
+      // PHASE 9: Include degradation flag
+      degradation_detected: checkForDegradation()
     }));
   }
 }, 10000);
 
+// PHASE 9: Periodic re-benchmark every hour
+setInterval(async () => {
+  if (!benchmarkResult?.completed) return;
+
+  const hoursSinceBenchmark = (Date.now() - benchmarkResult.timestamp) / (1000 * 60 * 60);
+
+  // Re-benchmark every hour or if degradation detected
+  if (hoursSinceBenchmark >= 1 || degradationCount >= DEGRADATION_THRESHOLD) {
+    console.log('[PHASE 9] Running periodic performance re-benchmark...');
+    const newBenchmark = await runBenchmark();
+
+    if (newBenchmark.completed) {
+      // Compare with previous benchmark
+      const prevScore = benchmarkResult.tok_per_sec;
+      const newScore = newBenchmark.tok_per_sec;
+      const change = ((newScore - prevScore) / prevScore) * 100;
+
+      console.log(`[PHASE 9] Benchmark complete: ${newScore} tok/s (change: ${change > 0 ? '+' : ''}${change.toFixed(1)}%)`);
+
+      // Update benchmark result
+      benchmarkResult = newBenchmark;
+      degradationCount = 0; // Reset counter after re-benchmark
+    }
+  }
+}, 60000); // Check every minute
+
 async function handleJob(job: Job) {
   console.log(`Processing job ${job.jobId} for model ${job.model}`);
-  
+
+  // PHASE 9: Add to pending queue
+  pendingJobs.push(job.jobId);
+
   // P1.3: Track job start for utilization
   currentJobStartMs = Date.now();
 
@@ -433,9 +494,15 @@ async function handleJob(job: Job) {
 
     console.log(`Job ${job.jobId} completed in ${elapsedMs}ms (${result.usageSource} tokens, signed, served: ${servedModel})`);
 
+    // PHASE 9: Remove from pending queue
+    pendingJobs = pendingJobs.filter(id => id !== job.jobId);
+
   } catch (error) {
     console.error(`Job ${job.jobId} failed:`, error);
     currentJobStartMs = null;
+
+    // PHASE 9: Remove from pending queue on error
+    pendingJobs = pendingJobs.filter(id => id !== job.jobId);
 
     ws.send(JSON.stringify({
       type: 'RESULT',
@@ -527,6 +594,55 @@ function detectHardware(): string {
     return gpu;
   }
   return 'CPU-only';
+}
+
+// PHASE 9: Detect GPU memory and utilization
+async function detectGPUInfo(): Promise<GPUInfo> {
+  // In production, this would call nvidia-smi or similar
+  // For MVP, use environment variables if provided
+  const info: GPUInfo = {};
+
+  if (process.env.GPU_VRAM_TOTAL) {
+    info.vram_total_mb = parseInt(process.env.GPU_VRAM_TOTAL);
+  }
+  if (process.env.GPU_VRAM_USED) {
+    info.vram_used_mb = parseInt(process.env.GPU_VRAM_USED);
+    if (info.vram_total_mb) {
+      info.vram_free_mb = info.vram_total_mb - info.vram_used_mb;
+    }
+  }
+  if (process.env.GPU_UTILIZATION) {
+    info.gpu_utilization = parseInt(process.env.GPU_UTILIZATION);
+  }
+  if (process.env.GPU_TEMPERATURE) {
+    info.temperature = parseInt(process.env.GPU_TEMPERATURE);
+  }
+
+  return info;
+}
+
+// PHASE 9: Check for performance degradation
+function checkForDegradation(): boolean {
+  if (!benchmarkResult?.completed) return false;
+
+  const baselineTokPerSec = benchmarkResult.tok_per_sec;
+  const hoursRunning = (Date.now() - wallMsStart) / (1000 * 60 * 60);
+  const currentJobsPerHour = hoursRunning > 0 ? jobsCompleted / hoursRunning : 0;
+
+  // Stub: would compare actual vs expected throughput
+  // If jobs per hour is significantly lower than benchmark suggests, flag degradation
+  const expectedJobsPerHour = baselineTokPerSec * 0.1; // Rough heuristic
+  if (currentJobsPerHour > 0 && currentJobsPerHour < expectedJobsPerHour * 0.5) {
+    degradationCount++;
+    console.log(`[PHASE 9] Degradation detected (${degradationCount}/${DEGRADATION_THRESHOLD})`);
+
+    if (degradationCount >= DEGRADATION_THRESHOLD) {
+      console.log('[PHASE 9] Threshold reached, triggering re-benchmark...');
+      return true;
+    }
+  }
+
+  return false;
 }
 
 console.log('Node Agent starting...');

@@ -109,21 +109,38 @@ df237a1 v0.3 Economics + P0 TASK 3 Completion
 
 ---
 
-## Phase 8: Intelligent Router [IN PROGRESS]
+## Phase 8: Intelligent Router [DONE]
 **Time**: 2026-02-23 19:38+10
 
+### Shipped:
+- [x] Adaptive scoring module: `services/router/src/scoring.ts`
+- [x] Weighted scoring: performance (25%), reliability (30%), latency (20%), utilization (15%), price (10%)
+- [x] Soft load shedding: filters nodes >90% utilization
+- [x] Routing metrics exposed in /stats: avg_score, load_shedding_active, nodes_available/congested
+- [x] Reliability penalty for recent failures
+
+### Files Modified:
+- services/router/src/scoring.ts (new)
+- services/router/src/index.ts
+
+### Commit:
+```
+875b3c4 PHASE 8: Intelligent Router - adaptive scoring, load shedding, routing metrics
+```
+
+---
+
+## Phase 9: Node Self-Optimisation [IN PROGRESS]
+**Time**: 2026-02-23 19:42+10
+
 ### Objective:
-Upgrade routing using tok_per_sec, latency, success rate, utilisation for adaptive node scoring.
+Node-agent enhancements: adaptive concurrency, queue depth reporting, GPU memory headroom, periodic re-benchmark.
 
 ### Implementation Plan:
-1. Create adaptive scoring function combining all metrics
-2. Add soft load shedding based on queue depth
-3. Expose routing metrics in stats
-4. Add reliability history tracking
-
-### Files to Modify:
-- services/router/src/index.ts - routing logic
-- services/router/src/scoring.ts - new scoring module
+1. Add queue depth tracking
+2. Report GPU memory if available
+3. Periodic performance re-benchmark (every hour)
+4. Degradation detection
 
 ---
 
