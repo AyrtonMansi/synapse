@@ -23,6 +23,9 @@ export interface CreateUsageEventInput {
   latency_ms: number;
   cost_estimate: number;
   status: 'success' | 'error';
+  prompt_hash?: string;
+  output_hash?: string;
+  receipt_json?: string;
 }
 
 export function createUsageEvent(input: CreateUsageEventInput): UsageEvent {
@@ -31,8 +34,8 @@ export function createUsageEvent(input: CreateUsageEventInput): UsageEvent {
   
   const stmt = db.prepare(`
     INSERT INTO usage_events 
-    (id, key_id, node_id, model, tokens_in, tokens_out, latency_ms, cost_estimate, status, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    (id, key_id, node_id, model, tokens_in, tokens_out, latency_ms, cost_estimate, status, created_at, prompt_hash, output_hash, receipt_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   
   stmt.run(
@@ -45,7 +48,10 @@ export function createUsageEvent(input: CreateUsageEventInput): UsageEvent {
     input.latency_ms,
     input.cost_estimate,
     input.status,
-    created_at
+    created_at,
+    input.prompt_hash || null,
+    input.output_hash || null,
+    input.receipt_json || null
   );
   
   return {

@@ -20,7 +20,7 @@ export function initDb() {
     )
   `);
 
-  // Usage events table
+  // Usage events table with receipt fields
   db.exec(`
     CREATE TABLE IF NOT EXISTS usage_events (
       id TEXT PRIMARY KEY,
@@ -33,6 +33,9 @@ export function initDb() {
       cost_estimate REAL NOT NULL,
       status TEXT NOT NULL,
       created_at INTEGER NOT NULL,
+      prompt_hash TEXT,
+      output_hash TEXT,
+      receipt_json TEXT,
       FOREIGN KEY (key_id) REFERENCES api_keys(id)
     )
   `);

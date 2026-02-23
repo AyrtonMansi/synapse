@@ -12,6 +12,10 @@ interface DispatchJobResult {
   content: string;
   node_id: string;
   model: string;
+  job_id?: string;
+  prompt_hash?: string;
+  output_hash?: string;
+  ts?: number;
 }
 
 export async function dispatchJob(input: DispatchJobInput): Promise<DispatchJobResult> {

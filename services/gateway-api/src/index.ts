@@ -164,8 +164,15 @@ app.post('/v1/chat/completions', async (request, reply) => {
     const tokensOut = Math.ceil(result.content.length / 4);
     const costEstimate = (tokensIn + tokensOut) * 0.0015 / 1000;
     
-    // Log usage
+    // Log usage with receipt
     if (request.apiKey) {
+      const receiptJson = JSON.stringify({
+        job_id: result.job_id,
+        prompt_hash: result.prompt_hash,
+        output_hash: result.output_hash,
+        ts: result.ts
+      });
+      
       createUsageEvent({
         key_id: request.apiKey.id,
         node_id: result.node_id,
@@ -174,7 +181,10 @@ app.post('/v1/chat/completions', async (request, reply) => {
         tokens_out: tokensOut,
         latency_ms: latencyMs,
         cost_estimate: costEstimate,
-        status: 'success'
+        status: 'success',
+        prompt_hash: result.prompt_hash,
+        output_hash: result.output_hash,
+        receipt_json: receiptJson
       });
     }
     

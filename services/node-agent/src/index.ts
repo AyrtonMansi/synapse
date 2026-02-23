@@ -137,15 +137,26 @@ async function handleJob(job: Job) {
     }
     
     const elapsedMs = Date.now() - startTime;
+    const ts = Date.now();
     
+    // Generate receipt fields (anti-fraud)
+    const promptText = job.messages.map(m => m.content).join('\n');
+    const promptHash = hashString(promptText);
+    const outputHash = hashString(result.output);
+    
+    // Send receipt to router
     ws.send(JSON.stringify({
       type: 'RESULT',
       jobId: job.jobId,
-      output: result.output,
+      nodeId: NODE_ID,
       model: job.model,
+      output: result.output,
+      promptHash,
+      outputHash,
       tokensIn: result.tokensIn,
       tokensOut: result.tokensOut,
-      elapsedMs
+      elapsedMs,
+      ts
     }));
     
     console.log(`Job ${job.jobId} completed in ${elapsedMs}ms`);
@@ -194,6 +205,17 @@ function callEchoStub(job: Job): { output: string; tokensIn: number; tokensOut: 
   const tokensOut = Math.ceil(output.length / 4);
   
   return { output, tokensIn, tokensOut };
+}
+
+function hashString(str: string): string {
+  // Simple hash for MVP - replace with crypto hash in production
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return Math.abs(hash).toString(16).padStart(8, '0');
 }
 
 function detectHardware(): string {

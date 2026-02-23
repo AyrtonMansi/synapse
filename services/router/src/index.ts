@@ -280,7 +280,11 @@ app.register(async function (app) {
                 pending.resolve({
                   content: data.output,
                   node_id: nodeId,
-                  model: data.model
+                  model: data.model,
+                  job_id: data.jobId,
+                  prompt_hash: data.promptHash,
+                  output_hash: data.outputHash,
+                  ts: data.ts
                 });
               }
             }
