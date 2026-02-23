@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: settlement
+  namespace: synapse
+  labels:
+    app: settlement
+spec:
+  replicas: 1  # Singleton - only one settlement daemon
+  selector:
+    matchLabels:
+      app: settlement
+  template:
+    metadata:
+      labels:
+        app: settlement
+    spec:
+      containers:
+        - name: settlement
+          image: ghcr.io/ayrtonmansi/synapse-settlement:latest
+          command: ["node", "dist/daemon.js"]
+          envFrom:
+            - configMapRef:
+                name: synapse-config
+          env:
+            - name: RPC_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: synapse-config
+                  key: HSK_RPC_URL
+            - name: SETTLEMENT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: synapse-secrets
+                  key: SETTLEMENT_KEY
+            - name: REWARDS_CONTRACT
+              valueFrom:
+                configMapKeyRef:
+                  name: synapse-config
+                  key: REWARDS_CONTRACT
+            - name: REGISTRY_CONTRACT
+              valueFrom:
+                configMapKeyRef:
+                  name: synapse-config
+                  key: REGISTRY_CONTRACT
+            - name: EPOCH_HOURS
+              value: "24"
+            - name: PROTOCOL_FEE
+              value: "10"
+            - name: MIN_GAS
+              value: "0.01"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: settlement-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: settlement-data
+  namespace: synapse
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: settlement
+  namespace: synapse
+spec:
+  selector:
+    app: settlement
+  ports:
+    - port: 3004
+      targetPort: 3004
+  type: ClusterIP

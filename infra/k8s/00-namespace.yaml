@@ -16,9 +16,18 @@ data:
   NODE_ENV: "production"
   LOG_LEVEL: "info"
   ROUTER_URL: "ws://router:3002"
+  COORDINATOR_URL: "http://coordinator:3003"
+  SETTLEMENT_URL: "http://settlement:3004"
+  BILLING_URL: "http://billing:3005"
   DATABASE_URL: "postgresql://synapse:password@postgres:5432/synapse"
   REDIS_URL: "redis://redis:6379"
   HSK_RPC_URL: "https://hashkeychain-rpc.com"
+  # Contract addresses (update after deployment)
+  HSK_TOKEN_CONTRACT: ""
+  TREASURY_CONTRACT: ""
+  ESCROW_CONTRACT: ""
+  REGISTRY_CONTRACT: ""
+  REWARDS_CONTRACT: ""
 ---
 apiVersion: v1
 kind: Secret
@@ -29,5 +38,7 @@ type: Opaque
 stringData:
   API_SIGNING_KEY: "changeme-in-production"
   HSK_PRIVATE_KEY: ""
+  SETTLEMENT_KEY: ""
+  ROUTER_AUTH_TOKEN: ""
   POSTGRES_PASSWORD: "changeme"
   REDIS_PASSWORD: ""
