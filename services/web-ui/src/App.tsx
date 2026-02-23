@@ -38,7 +38,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [stats, setStats] = useState({ nodes_online: 0, jobs_today: 0 });
-  const [activeTab, setActiveTab] = useState<'gateway' | 'node' | 'test'>('gateway');
+  const [activeTab, setActiveTab] = useState<'gateway' | 'node' | 'test' | 'dashboard'>('gateway');
   const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [testLoading, setTestLoading] = useState(false);
   // P1.4: Yield estimate state
@@ -197,12 +197,20 @@ function App() {
             Gateway
           </button>
           <button
+            onClick={() => setActiveTab('dashboard')}
+            className={`flex-1 py-2 text-sm rounded-md transition-colors ${
+              activeTab === 'dashboard' ? 'bg-gray-800 text-white' : 'text-gray-500 hover:text-gray-300'
+            }`}
+          >
+            Dashboard
+          </button>
+          <button
             onClick={() => setActiveTab('node')}
             className={`flex-1 py-2 text-sm rounded-md transition-colors ${
               activeTab === 'node' ? 'bg-gray-800 text-white' : 'text-gray-500 hover:text-gray-300'
             }`}
           >
-            Run a Node
+            Run Node
           </button>
           <button
             onClick={() => setActiveTab('test')}
@@ -257,18 +265,107 @@ function App() {
               </div>
             )}
           </div>
+        ) : activeTab === 'dashboard' ? (
+          // PHASE 10: Miner Performance Dashboard
+          <div className="bg-gray-900 rounded-xl p-6 border border-gray-800">
+            <div className="text-sm text-gray-400 mb-4">
+              Network Performance Dashboard
+            </div>
+
+            {yieldLoading ? (
+              <div className="text-center py-4 text-gray-500">Loading node metrics...</div>
+            ) : yieldEstimates.length === 0 ? (
+              <div className="text-xs text-gray-600 text-center py-4">
+                No active GPU nodes with benchmarks
+                <div className="mt-2 text-gray-500">Start a node to see metrics</div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {yieldEstimates.map((estimate, idx) => (
+                  <div key={idx} className="bg-gray-950 rounded-lg p-4 space-y-3">
+                    {/* Node Identity */}
+                    <div className="flex justify-between items-center border-b border-gray-800 pb-2">
+                      <span className="text-xs text-gray-400">Node</span>
+                      <span className="text-xs font-mono text-gray-300">
+                        {estimate.fingerprint.slice(0, 12)}...
+                      </span>
+                    </div>
+
+                    {/* Performance Metrics */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="bg-gray-900 rounded p-2">
+                        <div className="text-[10px] text-gray-500">Throughput</div>
+                        <div className="text-sm font-semibold text-green-400">
+                          {estimate.tok_per_sec > 0 ? `${estimate.tok_per_sec} tok/s` : 'N/A'}
+                        </div>
+                      </div>
+                      <div className="bg-gray-900 rounded p-2">
+                        <div className="text-[10px] text-gray-500">Utilization</div>
+                        <div className="text-sm font-semibold text-blue-400">
+                          {estimate.utilization_percent.toFixed(1)}%
+                        </div>
+                      </div>
+                      <div className="bg-gray-900 rounded p-2">
+                        <div className="text-[10px] text-gray-500">Jobs/Hour</div>
+                        <div className="text-sm font-semibold text-purple-400">
+                          {estimate.jobs_per_hour.toFixed(1)}
+                        </div>
+                      </div>
+                      <div className="bg-gray-900 rounded p-2">
+                        <div className="text-[10px] text-gray-500">Health Score</div>
+                        <div className={`text-sm font-semibold ${
+                          estimate.health_score > 0.8 ? 'text-green-400' :
+                          estimate.health_score > 0.5 ? 'text-yellow-400' : 'text-red-400'
+                        }`}>
+                          {(estimate.health_score * 100).toFixed(0)}%
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Model & Hardware */}
+                    <div className="flex justify-between text-xs">
+                      <span className="text-gray-500">Model: <span className="text-gray-300">{estimate.model}</span></span>
+                      <span className="text-gray-500">Hardware: <span className="text-gray-300">{estimate.hardware}</span></span>
+                    </div>
+
+                    {/* Revenue Estimate */}
+                    <div className="bg-gray-900 rounded p-3 mt-2">
+                      <div className="text-[10px] text-gray-500 mb-2">Estimated Daily Revenue</div>
+                      <div className="flex justify-between items-end">
+                        <div className="text-center">
+                          <div className="text-[10px] text-gray-600">Low</div>
+                          <div className="text-xs text-yellow-500">${estimate.estimated_revenue_per_day.low.toFixed(2)}</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-[10px] text-gray-600">Expected</div>
+                          <div className="text-lg font-bold text-green-400">${estimate.estimated_revenue_per_day.expected.toFixed(2)}</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-[10px] text-gray-600">High</div>
+                          <div className="text-xs text-yellow-500">${estimate.estimated_revenue_per_day.high.toFixed(2)}</div>
+                        </div>
+                      </div>
+                      <div className="text-[10px] text-gray-600 mt-2 italic text-center">
+                        *estimate based on current utilization and rate
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         ) : activeTab === 'node' ? (
           <div className="bg-gray-900 rounded-xl p-6 border border-gray-800">
             <div className="text-sm text-gray-400 mb-4">
               Run a GPU node and earn SYN tokens
             </div>
-            
+
             <div className="bg-gray-950 rounded-lg p-3 mb-4">
               <code className="text-xs text-gray-300 font-mono">
                 curl -sSL https://synapse.sh/install | bash
               </code>
             </div>
-            
+
             <div className="text-xs text-gray-500 space-y-1">
               <div>• Detects GPU automatically</div>
               <div>• Connects to router at {API_URL.replace(':3001', ':3002')}</div>

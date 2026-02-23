@@ -130,17 +130,36 @@ df237a1 v0.3 Economics + P0 TASK 3 Completion
 
 ---
 
-## Phase 9: Node Self-Optimisation [IN PROGRESS]
+## Phase 9: Node Self-Optimisation [DONE]
 **Time**: 2026-02-23 19:42+10
 
+### Shipped:
+- [x] Queue depth tracking in heartbeat (`queue_depth` field)
+- [x] GPU memory reporting (`vram_free_mb`, `vram_total_mb`, `gpu_utilization`)
+- [x] Periodic re-benchmark every hour
+- [x] Degradation detection with threshold (3 events triggers re-benchmark)
+- [x] Degradation flag in heartbeat
+
+### Files Modified:
+- services/node-agent/src/index.ts
+
+### Commit:
+```
+8853954 PHASE 9: Node Self-Optimisation - queue depth, GPU memory, periodic re-benchmark, degradation detection
+```
+
+---
+
+## Phase 10: Miner Performance Dashboard [IN PROGRESS]
+**Time**: 2026-02-23 19:45+10
+
 ### Objective:
-Node-agent enhancements: adaptive concurrency, queue depth reporting, GPU memory headroom, periodic re-benchmark.
+Extend Web UI to display comprehensive miner performance dashboard.
 
 ### Implementation Plan:
-1. Add queue depth tracking
-2. Report GPU memory if available
-3. Periodic performance re-benchmark (every hour)
-4. Degradation detection
+1. Add new "Dashboard" tab to Web UI
+2. Display: tok/sec, utilization %, concurrency, latency band, jobs/hr, estimated earnings band, health score, fingerprint
+3. Auto-refresh every 5 seconds
 
 ---
 
