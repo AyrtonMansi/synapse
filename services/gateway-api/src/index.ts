@@ -14,6 +14,7 @@ import {
   type ChatCompletionInput 
 } from './schemas.js';
 import { checkQuota, wouldExceedQuota, getQuotaHeaders } from './quota.js';
+import { chargeUsage, checkConcurrency, releaseConcurrency, getBalance } from '../../billing/src/billing.js';
 
 const app = Fastify({
   logger: true,
@@ -98,6 +99,17 @@ app.addHook('onRequest', async (request, reply) => {
         tokensRemaining: quota.tokensRemaining,
         resetAt: new Date(quota.resetTime).toISOString()
       }
+    });
+    return;
+  }
+
+  // PHASE 1: Check concurrency cap
+  const concurrency = checkConcurrency(apiKey.id);
+  if (!concurrency.allowed) {
+    reply.code(429).send({
+      error: 'Too many concurrent requests',
+      message: `Maximum ${concurrency.current} concurrent requests allowed. Please retry.`,
+      retryAfter: 1
     });
     return;
   }
@@ -288,6 +300,23 @@ app.post('/v1/chat/completions', async (request, reply) => {
         output_hash: result.output_hash,
         receipt_json: receiptJson
       });
+      
+      // PHASE 1: Charge for usage (USD-stable pricing)
+      const chargeResult = chargeUsage(
+        request.apiKey.id,
+        result.node_id,
+        servedModel,
+        tokensIn,
+        tokensOut
+      );
+      
+      if (!chargeResult.success) {
+        // Still return result but warn about billing issue
+        console.warn(`[Billing] Charge failed for ${request.apiKey.id}: ${chargeResult.error}`);
+      }
+      
+      // PHASE 1: Release concurrency slot
+      releaseConcurrency(request.apiKey.id);
     }
     
     // P0 TASK 3: Add header for served model transparency
@@ -338,7 +367,7 @@ app.post('/v1/chat/completions', async (request, reply) => {
     
   } catch (error) {
     const latencyMs = Date.now() - startTime;
-    
+
     if (request.apiKey) {
       createUsageEvent({
         key_id: request.apiKey.id,
@@ -350,9 +379,12 @@ app.post('/v1/chat/completions', async (request, reply) => {
         cost_estimate: 0,
         status: 'error'
       });
+
+      // PHASE 1: Release concurrency slot on error
+      releaseConcurrency(request.apiKey.id);
     }
-    
-    reply.code(500).send({ 
+
+    reply.code(500).send({
       error: 'Inference failed',
       message: error instanceof Error ? error.message : 'Unknown error'
     });
