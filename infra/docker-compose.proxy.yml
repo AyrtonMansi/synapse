@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  # TLS Termination + Reverse Proxy
+  caddy:
+    image: caddy:2-alpine
+    container_name: synapse-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"  # HTTP/3
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+      - ./synapse-landing:/srv/synapse-landing:ro
+    environment:
+      - ACME_AGREE=true
+    networks:
+      - synapse
+    depends_on:
+      - gateway-api
+      - router
+
+  # Alternative: Traefik (if preferred over Caddy)
+  traefik:
+    image: traefik:v3.0
+    container_name: synapse-traefik
+    restart: unless-stopped
+    profiles:
+      - traefik  # Only start if explicitly requested
+    command:
+      - "--api.insecure=false"
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.email=admin@synapse.sh"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      - "--entryPoints.websecure.http.tls.options=default"
+      - "--tls.options.default.minVersion=VersionTLS13"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik-certs:/letsencrypt
+    networks:
+      - synapse
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api.rule=Host(`api.synapse.sh`)"
+      - "traefik.http.routers.api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.api.service=gateway-api"
+      - "traefik.http.services.gateway-api.loadbalancer.server.port=3001"
+
+  # Certificate management helper
+  certbot:
+    image: certbot/certbot
+    container_name: synapse-certbot
+    profiles:
+      - manual-certs
+    volumes:
+      - ./infra/caddy/certs:/etc/letsencrypt
+      - ./synapse-landing:/var/www/html:ro
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+
+volumes:
+  caddy-data:
+  caddy-config:
+  traefik-certs:
+
+networks:
+  synapse:
+    external: true

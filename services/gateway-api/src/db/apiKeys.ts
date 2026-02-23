@@ -1,13 +1,39 @@
 import { db } from './index.js';
-import { randomUUID, createHash } from 'crypto';
+import { randomUUID, createHash, timingSafeEqual } from 'crypto';
 import bcrypt from 'bcryptjs';
+
+// PHASE 1: Security Baseline - Use Argon2id if available, fallback to bcrypt
+// Argon2id is memory-hard and resistant to GPU cracking
+let hashKey: (key: string) => Promise<string>;
+let verifyKey: (key: string, hash: string) => Promise<boolean>;
+
+try {
+  // Dynamic import for argon2 (Node.js native module)
+  const argon2 = await import('argon2');
+  hashKey = async (key: string) => {
+    return argon2.hash(key, {
+      type: argon2.argon2id,
+      memoryCost: 65536,  // 64 MB
+      timeCost: 3,        // 3 iterations
+      parallelism: 4      // 4 parallel threads
+    });
+  };
+  verifyKey = async (key: string, hash: string) => {
+    return argon2.verify(hash, key);
+  };
+  console.log('[PHASE 1] Using Argon2id for API key hashing');
+} catch {
+  // Fallback to bcrypt with high rounds
+  console.log('[PHASE 1] Argon2 not available, using bcrypt (12 rounds)');
+  hashKey = async (key: string) => bcrypt.hash(key, 12);
+  verifyKey = async (key: string, hash: string) => bcrypt.compare(key, hash);
+}
 
 // P1.2: New key format with embedded keyId for O(1) lookup
 // Format: syn_live_<keyId>_<secret>
 // keyId is a 16-char alphanumeric identifier for fast DB lookup
-// secret is a 32-char random string for bcrypt verification
+// secret is a 32-char random string for hashing
 const KEY_PREFIX = 'syn_live_';
-const BCRYPT_ROUNDS = 12;
 
 export interface ApiKey {
   id: string;
@@ -73,17 +99,18 @@ export async function verifyKey(key: string, hash: string): Promise<boolean> {
 
 /**
  * P1.2: Create a new API key with O(1) lookup format
+ * PHASE 1: Async to support Argon2
  */
-export function createApiKey(input: CreateKeyInput): { id: string; key: string } {
+export async function createApiKey(input: CreateKeyInput): Promise<{ id: string; key: string }> {
   const id = randomUUID();
   const { key, keyId } = generateApiKey();
-  const keyHash = bcrypt.hashSync(key, BCRYPT_ROUNDS);
-  
+  const keyHash = await hashKey(key);
+
   const stmt = db.prepare(`
     INSERT INTO api_keys (id, key_id, key_hash, owner_email, owner_wallet, created_at, use_count)
     VALUES (?, ?, ?, ?, ?, ?, 0)
   `);
-  
+
   stmt.run(
     id,
     keyId,  // P1.2: Store extractable keyId for O(1) lookup
@@ -92,7 +119,7 @@ export function createApiKey(input: CreateKeyInput): { id: string; key: string }
     input.wallet || null,
     Date.now()
   );
-  
+
   return { id, key };
 }
 

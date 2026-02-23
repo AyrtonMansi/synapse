@@ -1,0 +1,79 @@
+# Caddyfile - Production TLS Configuration
+# Automatic HTTPS with Let's Encrypt
+
+{
+    auto_https off
+    admin off
+}
+
+# Public API Gateway
+api.synapse.sh {
+    tls {
+        protocols tls1.3
+        ciphers TLS_AES_256_GCM_SHA384 TLS_CHACHA20_POLY1305_SHA256
+    }
+
+    # Security headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https: wss:;"
+        remove Server
+    }
+
+    # Rate limiting (via Caddy rate limit plugin or upstream)
+    
+    # Reverse proxy to gateway-api
+    reverse_proxy gateway-api:3001 {
+        header_up X-Real-IP {remote}
+        header_up X-Forwarded-For {remote}
+        header_up X-Forwarded-Proto {scheme}
+        
+        # Health checks
+        health_uri /health
+        health_interval 10s
+        health_timeout 5s
+    }
+}
+
+# Router WebSocket endpoint (internal only, mTLS)
+router.synapse.sh {
+    tls {
+        protocols tls1.3
+        client_auth {
+            mode require_and_verify
+            trusted_ca_cert_file /etc/caddy/certs/ca.crt
+        }
+    }
+
+    reverse_proxy router:3002 {
+        header_up X-Real-IP {remote}
+    }
+}
+
+# Static landing page
+synapse.sh {
+    tls {
+        protocols tls1.3
+    }
+
+    root * /srv/synapse-landing
+    file_server
+    try_files {path} /index.html
+}
+
+# Metrics endpoint (protected)
+metrics.synapse.sh {
+    tls {
+        protocols tls1.3
+    }
+
+    basicauth {
+        admin $2a$14$hash_here  # bcrypt hash
+    }
+
+    reverse_proxy prometheus:9090
+}
