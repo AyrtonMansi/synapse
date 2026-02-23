@@ -1,0 +1,294 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --terminal-bg: #0a0a0a;
+  --terminal-surface: #111111;
+  --terminal-elevated: #1a1a1a;
+  --terminal-border: #262626;
+  --terminal-muted: #404040;
+  --terminal-text: #e5e5e5;
+  --terminal-dim: #a3a3a3;
+  --terminal-accent: #10b981;
+  --terminal-accent-dim: #059669;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--terminal-bg);
+  color: var(--terminal-text);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Selection styling */
+::selection {
+  background: rgba(16, 185, 129, 0.3);
+  color: #fff;
+}
+
+/* Terminal cursor */
+.cursor-terminal::after {
+  content: '█';
+  animation: blink 1s step-end infinite;
+  color: var(--terminal-accent);
+  margin-left: 2px;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--terminal-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--terminal-muted);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #525252;
+}
+
+/* Terminal grid background */
+.terminal-grid-bg {
+  background-image: 
+    radial-gradient(circle at 1px 1px, rgba(255,255,255,0.03) 1px, transparent 0);
+  background-size: 24px 24px;
+}
+
+/* Dot pattern background */
+.dot-pattern-bg {
+  background-image: radial-gradient(circle, rgba(255,255,255,0.08) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* Subtle grid lines */
+.grid-lines-bg {
+  background-image: 
+    linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+  background-size: 50px 50px;
+}
+
+/* Code block styling */
+pre {
+  background: var(--terminal-surface);
+  border: 1px solid var(--terminal-border);
+  border-radius: 8px;
+  padding: 1rem;
+  overflow-x: auto;
+}
+
+code {
+  font-family: 'JetBrains Mono', 'Fira Code', Consolas, Monaco, monospace;
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+/* Inline code */
+:not(pre) > code {
+  background: rgba(255,255,255,0.05);
+  padding: 0.2em 0.4em;
+  border-radius: 4px;
+  color: var(--terminal-accent);
+}
+
+/* Syntax highlighting colors */
+.code-keyword { color: #c678dd; }
+.code-string { color: #98c379; }
+.code-comment { color: #5c6370; font-style: italic; }
+.code-function { color: #61afef; }
+.code-number { color: #d19a66; }
+.code-operator { color: #56b6c2; }
+
+/* Terminal window chrome */
+.terminal-chrome {
+  position: relative;
+}
+
+.terminal-chrome::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 32px;
+  background: var(--terminal-elevated);
+  border-bottom: 1px solid var(--terminal-border);
+  border-radius: 8px 8px 0 0;
+}
+
+/* Glow effects */
+.glow-accent {
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+}
+
+.glow-accent-sm {
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.2);
+}
+
+.text-glow {
+  text-shadow: 0 0 10px currentColor;
+}
+
+/* Loading states */
+.loading-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Scanline effect */
+.scanlines::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.03) 2px,
+    rgba(0,0,0,0.03) 4px
+  );
+  pointer-events: none;
+}
+
+/* Status indicators */
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-dot.active {
+  background: var(--terminal-accent);
+  box-shadow: 0 0 8px var(--terminal-accent);
+  animation: pulse 2s infinite;
+}
+
+.status-dot.warning {
+  background: #f59e0b;
+  box-shadow: 0 0 8px #f59e0b;
+}
+
+.status-dot.error {
+  background: #ef4444;
+  box-shadow: 0 0 8px #ef4444;
+}
+
+/* Focus styles */
+*:focus-visible {
+  outline: none;
+  ring: 2px;
+  ring-color: rgba(16, 185, 129, 0.5);
+}
+
+/* Link hover effect */
+.link-terminal {
+  position: relative;
+  color: var(--terminal-dim);
+  transition: color 0.2s;
+}
+
+.link-terminal:hover {
+  color: var(--terminal-accent);
+}
+
+.link-terminal::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 0;
+  height: 1px;
+  background: var(--terminal-accent);
+  transition: width 0.3s ease;
+}
+
+.link-terminal:hover::after {
+  width: 100%;
+}
+
+/* Button press effect */
+.btn-press:active {
+  transform: translateY(1px);
+}
+
+/* Smooth transitions */
+.transition-terminal {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Card hover lift */
+.card-lift {
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.card-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+}
+
+/* Monospace utility */
+.font-mono-alt {
+  font-family: 'Courier New', Courier, monospace;
+  letter-spacing: -0.02em;
+}
+
+/* Command prompt */
+.command-prompt::before {
+  content: '$ ';
+  color: var(--terminal-accent);
+  user-select: none;
+}
+
+/* Line numbers for code */
+.line-numbers {
+  counter-reset: line;
+}
+
+.line-numbers > *::before {
+  counter-increment: line;
+  content: counter(line);
+  display: inline-block;
+  width: 2em;
+  margin-right: 1em;
+  text-align: right;
+  color: var(--terminal-muted);
+  user-select: none;
+}
+
+/* Responsive text */
+@media (max-width: 640px) {
+  html {
+    font-size: 14px;
+  }
+}

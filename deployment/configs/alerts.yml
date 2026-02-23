@@ -1,0 +1,157 @@
+# Alert Rules for Synapse Network
+
+groups:
+  - name: synapse-alerts
+    rules:
+      # ========================================
+      # Node Health Alerts
+      # ========================================
+      - alert: NodeDown
+        expr: up{job="synapse-node"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Synapse node {{ $labels.instance }} is down"
+          description: "Node has been down for more than 5 minutes"
+
+      - alert: HighNodeDropoutRate
+        expr: (count(up{job="synapse-node"} == 0) / count(up{job="synapse-node"})) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High node dropout rate detected"
+          description: "More than 5% of nodes are offline"
+
+      # ========================================
+      # API Gateway Alerts
+      # ========================================
+      - alert: APIGatewayDown
+        expr: up{job="synapse-api-gateway"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API Gateway {{ $labels.instance }} is down"
+          description: "API Gateway has been down for more than 2 minutes"
+
+      - alert: HighAPIErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.01
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High API error rate"
+          description: "Error rate is above 1% for 5 minutes"
+
+      - alert: HighAPIResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High API response time"
+          description: "95th percentile response time is above 500ms"
+
+      - alert: APIDiskFull
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API Gateway disk is almost full"
+          description: "Less than 10% disk space remaining"
+
+      # ========================================
+      # IPFS Alerts
+      # ========================================
+      - alert: IPFSNodeDown
+        expr: up{job="ipfs"} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPFS node {{ $labels.instance }} is down"
+          description: "IPFS node has been down for more than 5 minutes"
+
+      - alert: IPFSSwarmPeersLow
+        expr: ipfs_p2p_peers < 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPFS node has low peer count"
+          description: "Node has less than 10 peers"
+
+      # ========================================
+      # Database Alerts
+      # ========================================
+      - alert: PostgresDown
+        expr: up{job="postgres"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL is down"
+          description: "Database has been down for more than 2 minutes"
+
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis is down"
+          description: "Redis cache has been down for more than 2 minutes"
+
+      # ========================================
+      # Blockchain Alerts
+      # ========================================
+      - alert: SmartContractPause
+        expr: increase(contract_pause_events_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Smart contract has been paused"
+          description: "Emergency pause triggered on contract"
+
+      - alert: HighGasPrice
+        expr: ethereum_gas_price_gwei > 200
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High gas prices detected"
+          description: "Gas price is above 200 Gwei"
+
+      - alert: DisputeCreated
+        expr: increase(dispute_created_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High dispute rate"
+          description: "More than 10 disputes created in 5 minutes"
+
+      # ========================================
+      # System Alerts
+      # ========================================
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is above 80%"
+
+      - alert: HighMemoryUsage
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is above 85%"
