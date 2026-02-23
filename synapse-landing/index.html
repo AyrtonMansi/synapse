@@ -474,6 +474,13 @@
       <p class="subtitle">Compute Liquidity Network</p>
     </header>
     
+    <!-- Anti-Scam Warning -->
+    <div class="anti-scam-banner" style="background: rgba(255, 170, 0, 0.1); border: 1px solid rgba(255, 170, 0, 0.3); border-radius: 8px; padding: 16px; margin-bottom: 24px; font-size: 12px; color: var(--warning);">
+      <strong>⚠️ Security Notice:</strong> We will NEVER ask for your private key. 
+      Only connect wallets you control. Verify contract addresses on-chain before depositing funds.
+      <a href="https://docs.synapse.sh/security" style="color: var(--accent); text-decoration: underline;">Learn more</a>
+    </div>
+    
     <main class="terminal">
       <div class="terminal-header">
         <span class="dot dot-red"></span>
@@ -514,6 +521,34 @@
         <div class="command-box">
           <code class="command-text">curl -sSL https://synapse.sh/install | bash</code>
           <button class="command-copy" id="copyCmdBtn">Copy</button>
+        </div>
+        
+        <!-- Profitability Calculator -->
+        <div class="calc-section" style="margin: 20px 0; padding: 16px; background: rgba(0,0,0,0.3); border-radius: 4px;">
+          <div class="section-title" style="margin-bottom: 12px;">ESTIMATED EARNINGS</div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 12px;">
+            <div>
+              <span style="color: var(--text-secondary);">GPU: </span>
+              <select id="gpuSelect" style="background: #1a1a1a; border: 1px solid #333; color: var(--text-primary); padding: 4px; border-radius: 4px;">
+                <option value="4090">RTX 4090</option>
+                <option value="3090">RTX 3090</option>
+                <option value="a100">A100</option>
+              </select>
+            </div>
+            <div>
+              <span style="color: var(--text-secondary);">Util: </span>
+              <select id="utilSelect" style="background: #1a1a1a; border: 1px solid #333; color: var(--text-primary); padding: 4px; border-radius: 4px;">
+                <option value="0.5">50%</option>
+                <option value="0.7" selected>70%</option>
+                <option value="0.9">90%</option>
+              </select>
+            </div>
+          </div>
+          <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center;">
+            <span style="color: var(--text-secondary); font-size: 11px;">Est. Monthly</span>
+            <span id="calcEarnings" style="color: var(--success); font-size: 16px; font-weight: 500;">$650</span>
+          </div>
+          <div style="font-size: 9px; color: var(--text-secondary); margin-top: 4px;">*Varies by network demand, electricity costs, HSK price</div>
         </div>
         
         <div class="stats-grid">
@@ -733,6 +768,42 @@
       fetchStats(); // Initial fetch
       statsInterval = setInterval(fetchStats, 5000);
     }
+    
+    // Profitability calculator
+    const gpuSelect = document.getElementById('gpuSelect');
+    const utilSelect = document.getElementById('utilSelect');
+    const calcEarnings = document.getElementById('calcEarnings');
+    
+    const gpuRates = {
+      '4090': { tokPerSec: 85, power: 350 },
+      '3090': { tokPerSec: 55, power: 350 },
+      'a100': { tokPerSec: 120, power: 400 }
+    };
+    
+    function updateCalc() {
+      const gpu = gpuSelect.value;
+      const util = parseFloat(utilSelect.value);
+      const rate = gpuRates[gpu];
+      
+      // Calculate daily tokens
+      const dailyTokens = rate.tokPerSec * util * 86400;
+      
+      // Revenue at $2 per 1M tokens
+      const dailyRevenue = (dailyTokens / 1000000) * 2;
+      
+      // Electricity cost (assumed $0.10/kWh)
+      const powerKw = rate.power / 1000;
+      const dailyPowerCost = powerKw * 24 * 0.10;
+      
+      // Monthly profit
+      const monthlyProfit = (dailyRevenue - dailyPowerCost) * 30;
+      
+      calcEarnings.textContent = '$' + Math.max(0, Math.round(monthlyProfit));
+    }
+    
+    gpuSelect.addEventListener('change', updateCalc);
+    utilSelect.addEventListener('change', updateCalc);
+    updateCalc(); // Initial calc
     
     // Event listeners
     generateBtn.addEventListener('click', generateApiKey);
