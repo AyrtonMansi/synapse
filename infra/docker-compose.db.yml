@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Primary
+  postgres:
+    image: postgres:16-alpine
+    container_name: synapse-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-synapse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-synapse}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-synapse}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - synapse
+
+  # PostgreSQL Replica (for HA, optional)
+  postgres-replica:
+    image: postgres:16-alpine
+    container_name: synapse-postgres-replica
+    restart: unless-stopped
+    profiles:
+      - ha
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-synapse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-synapse}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-replica-data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    networks:
+      - synapse
+    depends_on:
+      - postgres
+
+  # Redis for caching
+  redis:
+    image: redis:7-alpine
+    container_name: synapse-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - synapse
+
+  # PgAdmin (optional, for development)
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: synapse-pgadmin
+    restart: unless-stopped
+    profiles:
+      - dev
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@synapse.sh}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    networks:
+      - synapse
+    depends_on:
+      - postgres
+
+volumes:
+  postgres-data:
+  postgres-replica-data:
+  redis-data:
+  pgadmin-data:
+
+networks:
+  synapse:
+    external: true

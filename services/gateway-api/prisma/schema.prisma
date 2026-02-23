@@ -1,0 +1,87 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model ApiKey {
+  id            String    @id @default(uuid())
+  keyId         String    @unique @map("key_id")
+  keyHash       String    @map("key_hash")
+  ownerEmail    String?   @map("owner_email")
+  ownerWallet   String?   @map("owner_wallet")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  revokedAt     DateTime? @map("revoked_at")
+  lastUsedAt    DateTime? @map("last_used_at")
+  useCount      Int       @default(0) @map("use_count")
+
+  @@index([keyId])
+  @@index([ownerWallet])
+  @@map("api_keys")
+}
+
+model UsageEvent {
+  id           String   @id @default(uuid())
+  keyId        String   @map("key_id")
+  nodeId       String   @map("node_id")
+  model        String
+  tokensIn     Int      @map("tokens_in")
+  tokensOut    Int      @map("tokens_out")
+  latencyMs    Int      @map("latency_ms")
+  costEstimate Float    @map("cost_estimate")
+  status       String
+  promptHash   String?  @map("prompt_hash")
+  outputHash   String?  @map("output_hash")
+  receiptJson  String?  @map("receipt_json")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([keyId])
+  @@index([createdAt])
+  @@index([nodeId])
+  @@map("usage_events")
+}
+
+model Node {
+  id            String   @id @default(uuid())
+  nodeId        String   @unique @map("node_id")
+  fingerprint   String   @unique
+  publicKey     String   @map("public_key")
+  wallet        String
+  models        String[]
+  pricePer1m    Float    @map("price_per_1m")
+  hardware      String
+  tokPerSec     Float?   @map("tok_per_sec")
+  createdAt     DateTime @default(now()) @map("created_at")
+  lastSeenAt    DateTime @map("last_seen_at")
+  healthScore   Float    @default(1.0) @map("health_score")
+  successRate   Float    @default(1.0) @map("success_rate")
+  totalJobs     Int      @default(0) @map("total_jobs")
+  isActive      Boolean  @default(true) @map("is_active")
+
+  @@index([fingerprint])
+  @@index([wallet])
+  @@map("nodes")
+}
+
+model Settlement {
+  id          String   @id @default(uuid())
+  epochId     Int      @map("epoch_id")
+  nodeId      String   @map("node_id")
+  wallet      String
+  amount      Float
+  merkleRoot  String   @map("merkle_root")
+  proof       String
+  claimedAt   DateTime @map("claimed_at")
+  txHash      String   @map("tx_hash")
+
+  @@index([epochId])
+  @@index([nodeId])
+  @@index([wallet])
+  @@map("settlements")
+}
