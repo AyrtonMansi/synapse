@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: synapse
+  labels:
+    name: synapse
+    app.kubernetes.io/name: synapse
+    app.kubernetes.io/part-of: synapse-network
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: synapse-config
+  namespace: synapse
+data:
+  NODE_ENV: "production"
+  LOG_LEVEL: "info"
+  ROUTER_URL: "ws://router:3002"
+  DATABASE_URL: "postgresql://synapse:password@postgres:5432/synapse"
+  REDIS_URL: "redis://redis:6379"
+  HSK_RPC_URL: "https://hashkeychain-rpc.com"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: synapse-secrets
+  namespace: synapse
+type: Opaque
+stringData:
+  API_SIGNING_KEY: "changeme-in-production"
+  HSK_PRIVATE_KEY: ""
+  POSTGRES_PASSWORD: "changeme"
+  REDIS_PASSWORD: ""
