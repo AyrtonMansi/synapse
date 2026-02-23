@@ -662,4 +662,27 @@ contract ModelRegistry is Initializable, AccessControl, ReentrancyGuard, UUPSUpg
         arr[3] = d;
         return arr;
     }
+
+    function _toArray(string memory a, string memory b, string memory c, string memory d, string memory e) 
+        internal pure returns (string[] memory) {
+        string[] memory arr = new string[](5);
+        arr[0] = a;
+        arr[1] = b;
+        arr[2] = c;
+        arr[3] = d;
+        arr[4] = e;
+        return arr;
+    }
+
+    function _toArray(string memory a, string memory b, string memory c, string memory d, string memory e, string memory f) 
+        internal pure returns (string[] memory) {
+        string[] memory arr = new string[](6);
+        arr[0] = a;
+        arr[1] = b;
+        arr[2] = c;
+        arr[3] = d;
+        arr[4] = e;
+        arr[5] = f;
+        return arr;
+    }
 }

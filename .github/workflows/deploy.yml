@@ -1,0 +1,57 @@
+name: Auto Deploy to Vercel
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy-landing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+      - name: Deploy Landing to Vercel
+        working-directory: ./synapse-landing
+        run: |
+          npm ci
+          vercel --token ${{ secrets.VERCEL_TOKEN }} --yes --prod
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_LANDING }}
+
+  deploy-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+      - name: Deploy Frontend to Vercel
+        working-directory: ./synapse-frontend
+        run: |
+          npm ci
+          vercel --token ${{ secrets.VERCEL_TOKEN }} --yes --prod
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_FRONTEND }}
+
+  test-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - name: Test Contracts
+        working-directory: ./synapse-contracts
+        run: |
+          npm ci
+          npx hardhat compile
+          npx hardhat test
