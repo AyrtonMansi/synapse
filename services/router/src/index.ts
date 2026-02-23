@@ -92,13 +92,20 @@ app.post('/dispatch', async (request, reply) => {
       n.load < n.concurrency
     )
     .sort((a, b) => {
-      // Improved weighted scoring: success_rate * health > price > latency
+      // Routing weight = success_rate * health / (1 + latency_penalty) / price_factor
+      // Higher score = better node
+      const latencyPenaltyA = Math.min(a.avgLatencyMs / 1000, 10); // Cap at 10x
+      const latencyPenaltyB = Math.min(b.avgLatencyMs / 1000, 10);
+      const priceFactorA = 1 + (a.pricePer1m / 0.01); // Normalize to ~1-2 range
+      const priceFactorB = 1 + (b.pricePer1m / 0.01);
+      
       const scoreA = (a.successRate * a.healthScore * 100) 
-        - a.pricePer1m / 10 
-        - a.avgLatencyMs / 1000;
+        / (1 + latencyPenaltyA) 
+        / priceFactorA;
       const scoreB = (b.successRate * b.healthScore * 100) 
-        - b.pricePer1m / 10 
-        - b.avgLatencyMs / 1000;
+        / (1 + latencyPenaltyB) 
+        / priceFactorB;
+      
       return scoreB - scoreA;
     });
   
@@ -133,15 +140,17 @@ app.post('/dispatch', async (request, reply) => {
     } catch (error) {
       console.error(`Node ${node.id} failed:`, error);
       
-      // Update failure stats - more aggressive penalty
+      // Update failure stats - aggressive penalty
       node.totalJobs++;
       node.failedJobs++;
       node.successRate = node.successfulJobs / node.totalJobs;
       
-      // Aggressive penalty: 0.5 on failure, 0.7 on timeout
-      const isTimeout = error instanceof Error && error.message === 'Job timeout';
-      node.healthScore *= isTimeout ? 0.6 : 0.5;
-      node.timeouts += isTimeout ? 1 : 0;
+      // Very aggressive penalty: 0.5x on failure, 0.3x on timeout/disconnect
+      const isTimeout = error instanceof Error && 
+        (error.message === 'Job timeout' || error.message === 'Node disconnected' || error.message === 'Node timeout');
+      node.healthScore *= isTimeout ? 0.3 : 0.5;
+      
+      if (isTimeout) node.timeouts++;
       
       node.lastError = error instanceof Error ? error.message : 'Unknown error';
       node.lastErrorAt = Date.now();
