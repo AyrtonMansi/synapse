@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Synapse — Compute Liquidity Network</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    :root {
+      --bg-primary: #0b0b0b;
+      --bg-panel: rgba(20, 20, 20, 0.8);
+      --text-primary: #e0e0e0;
+      --text-secondary: #666;
+      --accent: #00d4ff;
+      --accent-dim: rgba(0, 212, 255, 0.1);
+      --success: #00ff88;
+      --warning: #ffaa00;
+      --error: #ff4444;
+      --glow: 0 0 20px rgba(0, 212, 255, 0.3);
+    }
+    
+    body {
+      font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', monospace;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow-x: hidden;
+    }
+    
+    /* Subtle grid background */
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-image: 
+        linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px);
+      background-size: 50px 50px;
+      pointer-events: none;
+    }
+    
+    .container {
+      width: 100%;
+      max-width: 600px;
+      padding: 40px 20px;
+      z-index: 1;
+    }
+    
+    /* Header */
+    .header {
+      text-align: center;
+      margin-bottom: 60px;
+    }
+    
+    .title {
+      font-size: 48px;
+      font-weight: 300;
+      letter-spacing: 0.2em;
+      color: var(--text-primary);
+      text-shadow: var(--glow);
+      margin-bottom: 12px;
+    }
+    
+    .subtitle {
+      font-size: 12px;
+      color: var(--text-secondary);
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+    }
+    
+    /* Terminal Panel */
+    .terminal {
+      background: var(--bg-panel);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 32px;
+      backdrop-filter: blur(10px);
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .terminal::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      opacity: 0.5;
+    }
+    
+    .terminal-header {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 24px;
+    }
+    
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    
+    .dot-red { background: var(--error); }
+    .dot-yellow { background: var(--warning); }
+    .dot-green { background: var(--success); }
+    
+    /* Input Section */
+    .input-group {
+      margin-bottom: 24px;
+    }
+    
+    .input-label {
+      display: block;
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+      letter-spacing: 0.05em;
+    }
+    
+    .input-field {
+      width: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 4px;
+      padding: 14px 16px;
+      font-family: inherit;
+      font-size: 14px;
+      color: var(--text-primary);
+      outline: none;
+      transition: all 0.2s;
+    }
+    
+    .input-field:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-dim);
+    }
+    
+    .input-field::placeholder {
+      color: var(--text-secondary);
+    }
+    
+    .input-error {
+      border-color: var(--error) !important;
+    }
+    
+    /* Button */
+    .btn {
+      width: 100%;
+      background: transparent;
+      border: 1px solid var(--accent);
+      border-radius: 4px;
+      padding: 16px;
+      font-family: inherit;
+      font-size: 13px;
+      color: var(--accent);
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      transition: all 0.3s;
+      letter-spacing: 0.05em;
+    }
+    
+    .btn:hover {
+      background: var(--accent-dim);
+      box-shadow: var(--glow);
+    }
+    
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    
+    .btn-generating::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, var(--accent-dim), transparent);
+      animation: shimmer 1.5s infinite;
+    }
+    
+    @keyframes shimmer {
+      to { left: 100%; }
+    }
+    
+    /* API Key Display */
+    .api-key-section {
+      display: none;
+      margin-top: 24px;
+      padding-top: 24px;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    
+    .api-key-section.visible {
+      display: block;
+      animation: fadeIn 0.5s ease;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .api-key-label {
+      font-size: 11px;
+      color: var(--success);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .api-key-box {
+      background: rgba(0, 0, 0, 0.5);
+      border: 1px solid rgba(0, 255, 136, 0.2);
+      border-radius: 4px;
+      padding: 16px;
+      font-size: 12px;
+      word-break: break-all;
+      position: relative;
+      margin-bottom: 12px;
+    }
+    
+    .api-key-text {
+      color: var(--success);
+      font-family: inherit;
+    }
+    
+    .copy-btn {
+      position: absolute;
+      top: 50%;
+      right: 12px;
+      transform: translateY(-50%);
+      background: rgba(255, 255, 255, 0.1);
+      border: none;
+      border-radius: 4px;
+      padding: 6px 12px;
+      font-size: 11px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .copy-btn:hover {
+      background: rgba(255, 255, 255, 0.15);
+      color: var(--text-primary);
+    }
+    
+    .copy-btn.copied {
+      background: var(--success);
+      color: var(--bg-primary);
+    }
+    
+    /* Node Section */
+    .node-section {
+      display: none;
+      margin-top: 32px;
+      padding-top: 32px;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    
+    .node-section.visible {
+      display: block;
+      animation: fadeIn 0.5s ease 0.2s both;
+    }
+    
+    .section-title {
+      font-size: 11px;
+      color: var(--accent);
+      letter-spacing: 0.1em;
+      margin-bottom: 16px;
+    }
+    
+    .command-box {
+      background: rgba(0, 0, 0, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 4px;
+      padding: 16px;
+      position: relative;
+      margin-bottom: 20px;
+    }
+    
+    .command-text {
+      font-size: 12px;
+      color: var(--text-primary);
+      font-family: inherit;
+    }
+    
+    .command-copy {
+      position: absolute;
+      top: 50%;
+      right: 12px;
+      transform: translateY(-50%);
+      background: transparent;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 4px;
+      padding: 6px 12px;
+      font-size: 11px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .command-copy:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    
+    /* Stats Grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    
+    .stat-item {
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 4px;
+      padding: 12px;
+    }
+    
+    .stat-label {
+      font-size: 10px;
+      color: var(--text-secondary);
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    
+    .stat-value {
+      font-size: 14px;
+      color: var(--text-primary);
+    }
+    
+    .stat-value.accent {
+      color: var(--accent);
+    }
+    
+    /* Dopamine Loop */
+    .dopamine-section {
+      display: none;
+      margin-top: 24px;
+      padding: 20px;
+      background: rgba(0, 212, 255, 0.03);
+      border: 1px solid rgba(0, 212, 255, 0.1);
+      border-radius: 4px;
+    }
+    
+    .dopamine-section.visible {
+      display: block;
+      animation: pulse 2s ease-in-out;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 rgba(0, 212, 255, 0); }
+      50% { box-shadow: 0 0 30px rgba(0, 212, 255, 0.1); }
+    }
+    
+    .dopamine-title {
+      font-size: 10px;
+      color: var(--accent);
+      margin-bottom: 16px;
+      letter-spacing: 0.1em;
+    }
+    
+    .dopamine-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    
+    .dopamine-item {
+      text-align: center;
+    }
+    
+    .dopamine-value {
+      font-size: 18px;
+      color: var(--success);
+      font-weight: 500;
+    }
+    
+    .dopamine-label {
+      font-size: 9px;
+      color: var(--text-secondary);
+      margin-top: 4px;
+      text-transform: uppercase;
+    }
+    
+    .fingerprint {
+      font-size: 10px;
+      color: var(--text-secondary);
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    
+    .earnings {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .earnings-label {
+      font-size: 10px;
+      color: var(--text-secondary);
+    }
+    
+    .earnings-value {
+      font-size: 14px;
+      color: var(--success);
+    }
+    
+    .earnings-note {
+      font-size: 9px;
+      color: var(--text-secondary);
+      font-style: italic;
+      margin-top: 8px;
+    }
+    
+    /* Cursor effect */
+    .cursor {
+      display: inline-block;
+      width: 8px;
+      height: 15px;
+      background: var(--accent);
+      margin-left: 2px;
+      animation: blink 1s step-end infinite;
+    }
+    
+    @keyframes blink {
+      50% { opacity: 0; }
+    }
+    
+    /* Responsive */
+    @media (max-width: 600px) {
+      .title {
+        font-size: 36px;
+      }
+      
+      .terminal {
+        padding: 24px;
+      }
+      
+      .dopamine-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <h1 class="title">SYNAPSE</h1>
+      <p class="subtitle">Compute Liquidity Network</p>
+    </header>
+    
+    <main class="terminal">
+      <div class="terminal-header">
+        <span class="dot dot-red"></span>
+        <span class="dot dot-yellow"></span>
+        <span class="dot dot-green"></span>
+      </div>
+      
+      <div class="input-group">
+        <label class="input-label">ETH address</label>
+        <input 
+          type="text" 
+          class="input-field" 
+          id="walletInput"
+          placeholder="0x..."
+          autocomplete="off"
+        />
+      </div>
+      
+      <button class="btn" id="generateBtn">
+        <span id="btnText">Generate API Key</span>
+        <span class="cursor" style="display: none;"></span>
+      </button>
+      
+      <div class="api-key-section" id="apiKeySection">
+        <div class="api-key-label">
+          <span>✓</span>
+          <span>API KEY GENERATED</span>
+        </div>
+        <div class="api-key-box">
+          <span class="api-key-text" id="apiKeyText"></span>
+          <button class="copy-btn" id="copyKeyBtn">Copy</button>
+        </div>
+      </div>
+      
+      <div class="node-section" id="nodeSection">
+        <div class="section-title">RUN NODE</div>
+        
+        <div class="command-box">
+          <code class="command-text">curl -sSL https://synapse.sh/install | bash</code>
+          <button class="command-copy" id="copyCmdBtn">Copy</button>
+        </div>
+        
+        <div class="stats-grid">
+          <div class="stat-item">
+            <div class="stat-label">Nodes Online</div>
+            <div class="stat-value accent" id="nodesOnline">0</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Jobs Today</div>
+            <div class="stat-value" id="jobsToday">0</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Cost / 1M tokens</div>
+            <div class="stat-value">$0.0015</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Last Job Latency</div>
+            <div class="stat-value" id="lastLatency">—</div>
+          </div>
+        </div>
+        
+        <div class="dopamine-section" id="dopamineSection">
+          <div class="dopamine-title">NODE ACTIVE</div>
+          <div class="dopamine-grid">
+            <div class="dopamine-item">
+              <div class="dopamine-value" id="jobsProcessed">0</div>
+              <div class="dopamine-label">Jobs</div>
+            </div>
+            <div class="dopamine-item">
+              <div class="dopamine-value" id="tokensProcessed">0</div>
+              <div class="dopamine-label">Tokens</div>
+            </div>
+            <div class="dopamine-item">
+              <div class="dopamine-value" id="utilization">0%</div>
+              <div class="dopamine-label">Utilization</div>
+            </div>
+          </div>
+          
+          <div class="fingerprint" id="fingerprintDisplay">
+            Fingerprint: <span style="color: var(--accent);">—</span>
+          </div>
+          
+          <div class="earnings">
+            <span class="earnings-label">Est. Daily</span>
+            <span class="earnings-value" id="earnings">$0.00</span>
+          </div>
+          <div class="earnings-note">*estimate based on current utilization</div>
+        </div>
+      </div>
+    </main>
+  </div>
+  
+  <script>
+    // API Configuration
+    const API_URL = window.location.hostname === 'localhost' 
+      ? 'http://localhost:3001' 
+      : 'https://api.synapse.sh';
+    
+    // State
+    let generatedKey = null;
+    let statsInterval = null;
+    let nodeDetected = false;
+    
+    // Elements
+    const walletInput = document.getElementById('walletInput');
+    const generateBtn = document.getElementById('generateBtn');
+    const btnText = document.getElementById('btnText');
+    const apiKeySection = document.getElementById('apiKeySection');
+    const apiKeyText = document.getElementById('apiKeyText');
+    const copyKeyBtn = document.getElementById('copyKeyBtn');
+    const nodeSection = document.getElementById('nodeSection');
+    const dopamineSection = document.getElementById('dopamineSection');
+    const copyCmdBtn = document.getElementById('copyCmdBtn');
+    
+    // Stats elements
+    const nodesOnlineEl = document.getElementById('nodesOnline');
+    const jobsTodayEl = document.getElementById('jobsToday');
+    const lastLatencyEl = document.getElementById('lastLatency');
+    const jobsProcessedEl = document.getElementById('jobsProcessed');
+    const tokensProcessedEl = document.getElementById('tokensProcessed');
+    const utilizationEl = document.getElementById('utilization');
+    const fingerprintDisplay = document.getElementById('fingerprintDisplay');
+    const earningsEl = document.getElementById('earnings');
+    
+    // ETH address validation
+    function isValidETH(address) {
+      return /^0x[a-fA-F0-9]{40}$/.test(address);
+    }
+    
+    // Generate API key
+    async function generateApiKey() {
+      const wallet = walletInput.value.trim();
+      
+      if (!wallet) {
+        walletInput.focus();
+        return;
+      }
+      
+      if (!isValidETH(wallet)) {
+        walletInput.classList.add('input-error');
+        setTimeout(() => walletInput.classList.remove('input-error'), 2000);
+        return;
+      }
+      
+      // Loading state
+      generateBtn.disabled = true;
+      generateBtn.classList.add('btn-generating');
+      btnText.textContent = 'Generating';
+      
+      try {
+        const response = await fetch(`${API_URL}/auth/api-key`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ wallet })
+        });
+        
+        if (!response.ok) {
+          throw new Error('Generation failed');
+        }
+        
+        const data = await response.json();
+        generatedKey = data.api_key;
+        
+        // Display key
+        apiKeyText.textContent = generatedKey;
+        apiKeySection.classList.add('visible');
+        nodeSection.classList.add('visible');
+        
+        // Start stats polling
+        startStatsPolling();
+        
+      } catch (err) {
+        console.error('Generation error:', err);
+        btnText.textContent = 'Retry';
+        generateBtn.disabled = false;
+      } finally {
+        generateBtn.classList.remove('btn-generating');
+      }
+    }
+    
+    // Copy to clipboard
+    async function copyToClipboard(text, btn) {
+      try {
+        await navigator.clipboard.writeText(text);
+        const originalText = btn.textContent;
+        btn.textContent = 'Copied';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.textContent = originalText;
+          btn.classList.remove('copied');
+        }, 2000);
+      } catch (err) {
+        console.error('Copy failed:', err);
+      }
+    }
+    
+    // Fetch stats
+    async function fetchStats() {
+      try {
+        const response = await fetch(`${API_URL}/stats`);
+        if (!response.ok) return;
+        
+        const stats = await response.json();
+        
+        // Update basic stats
+        nodesOnlineEl.textContent = stats.nodes_online || 0;
+        jobsTodayEl.textContent = stats.jobs_today || 0;
+        lastLatencyEl.textContent = stats.avg_latency_ms 
+          ? `${stats.avg_latency_ms}ms` 
+          : '—';
+        
+        // Check for node activity (dopamine loop)
+        if (stats.nodeDetails && stats.nodeDetails.length > 0 && !nodeDetected) {
+          const activeNode = stats.nodeDetails[0];
+          if (activeNode.jobs_completed > 0) {
+            nodeDetected = true;
+            dopamineSection.classList.add('visible');
+          }
+        }
+        
+        // Update dopamine stats if node detected
+        if (nodeDetected && stats.nodeDetails && stats.nodeDetails[0]) {
+          const node = stats.nodeDetails[0];
+          jobsProcessedEl.textContent = node.jobs_completed || 0;
+          tokensProcessedEl.textContent = formatNumber(
+            (node.tok_per_sec || 0) * (node.utilization || 0) / 100 * 86400
+          );
+          utilizationEl.textContent = `${(node.utilization || 0).toFixed(1)}%`;
+          
+          if (node.fingerprint) {
+            fingerprintDisplay.innerHTML = `Fingerprint: <span style="color: var(--accent);">${node.fingerprint.slice(0, 16)}...</span>`;
+          }
+          
+          // Calculate earnings estimate
+          const tokPerSec = node.tok_per_sec || 0;
+          const utilization = (node.utilization || 0) / 100;
+          const rate = node.pricePer1m || 0.0015;
+          const dailyTokens = tokPerSec * utilization * 86400;
+          const dailyRevenue = dailyTokens * (rate / 1000000);
+          earningsEl.textContent = `$${dailyRevenue.toFixed(2)}`;
+        }
+        
+      } catch (err) {
+        console.error('Stats fetch error:', err);
+      }
+    }
+    
+    // Format large numbers
+    function formatNumber(num) {
+      if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+      if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+      return Math.round(num).toString();
+    }
+    
+    // Start polling
+    function startStatsPolling() {
+      fetchStats(); // Initial fetch
+      statsInterval = setInterval(fetchStats, 5000);
+    }
+    
+    // Event listeners
+    generateBtn.addEventListener('click', generateApiKey);
+    
+    walletInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') generateApiKey();
+    });
+    
+    copyKeyBtn.addEventListener('click', () => {
+      if (generatedKey) copyToClipboard(generatedKey, copyKeyBtn);
+    });
+    
+    copyCmdBtn.addEventListener('click', () => {
+      copyToClipboard('curl -sSL https://synapse.sh/install | bash', copyCmdBtn);
+    });
+    
+    // Initial focus
+    walletInput.focus();
+  </script>
+</body>
+</html>
