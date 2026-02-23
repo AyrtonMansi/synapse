@@ -1,9 +1,10 @@
 import Database from 'better-sqlite3';
+import type { Database as DatabaseType } from 'better-sqlite3';
 import { join } from 'path';
 
 const dbPath = process.env.DATABASE_URL || join(process.cwd(), 'data', 'gateway.db');
 
-export const db = new Database(dbPath);
+export const db: DatabaseType = new Database(dbPath);
 db.pragma('journal_mode = WAL');
 
 export function initDb() {
