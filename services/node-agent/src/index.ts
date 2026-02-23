@@ -1,5 +1,5 @@
 import WebSocket from 'ws';
-import { randomUUID, createHash, generateKeyPairSync, sign, KeyObject } from 'crypto';
+import { randomUUID, createHash, generateKeyPairSync, sign } from 'crypto';
 import { config } from 'dotenv';
 
 config();
@@ -8,21 +8,19 @@ config();
 const RECEIPT_VERSION = '1.0';
 
 // Node keypair for signing receipts (generate once and persist in production)
-let nodePrivateKey: KeyObject;
+let nodePrivateKeyPem: string;
 let nodePublicKeyPem: string;
 
 function initKeypair() {
   // Generate new keypair on each startup (MVP - in production, persist keys)
-  const { publicKey, privateKey } = generateKeyPairSync('ed25519', {
+  const kp = generateKeyPairSync('ed25519', {
     publicKeyEncoding: { type: 'spki', format: 'pem' },
     privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
   });
-  nodePrivateKey = privateKey as KeyObject;
-  nodePublicKeyPem = publicKey as string;
+  nodePrivateKeyPem = kp.privateKey as unknown as string;
+  nodePublicKeyPem = kp.publicKey as unknown as string;
   console.log('Generated new node keypair for receipt signing');
 }
-
-initKeypair();
 
 const ROUTER_URL = process.env.ROUTER_URL || 'ws://localhost:3002/ws';
 const NODE_WALLET = process.env.NODE_WALLET || randomUUID();
@@ -321,7 +319,10 @@ function hashString(str: string): string {
 function signReceipt(receiptData: object): string {
   // Sign receipt data with node private key
   const data = JSON.stringify(receiptData);
-  const signature = sign(null, Buffer.from(data), nodePrivateKey);
+  // Create a temporary private key object from PEM for signing
+  const { createPrivateKey } = require('crypto');
+  const privateKey = createPrivateKey(nodePrivateKeyPem);
+  const signature = sign(null, Buffer.from(data), privateKey);
   return signature.toString('base64');
 }
 
