@@ -1,82 +1,89 @@
-# Synapse Network - Complete Platform
+# Synapse MVP
 
-A fully decentralized AI compute network. No central servers. No KYC. No admin keys.
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         USER LAYER                               │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐  │
-│  │   Web App    │  │   Node CLI   │  │   SDK (Python/JS)    │  │
-│  │  (IPFS)      │  │   (Docker)   │  │                      │  │
-│  └──────┬───────┘  └──────┬───────┘  └──────────┬───────────┘  │
-└─────────┼────────────────┼────────────────────┼────────────────┘
-          │                │                    │
-          ▼                ▼                    ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                       NETWORK LAYER                              │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐  │
-│  │  P2P Mesh    │  │   Gossip     │  │   The Graph          │  │
-│  │  (libp2p)    │  │   Protocol   │  │   Indexer            │  │
-│  └──────┬───────┘  └──────┬───────┘  └──────────┬───────────┘  │
-└─────────┼────────────────┼────────────────────┼────────────────┘
-          │                │                    │
-          ▼                ▼                    ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                       BLOCKCHAIN LAYER                           │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐  │
-│  │   HSK Token  │  │  JobRegistry │  │   Treasury DAO       │  │
-│  │   (ERC20)    │  │   (Escrow)   │  │   (Governance)       │  │
-│  └──────────────┘  └──────────────┘  └──────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-## Repositories
-
-- `synapse-contracts/` - Solidity smart contracts
-- `synapse-backend/` - P2P mesh coordinator + indexer
-- `synapse-frontend/` - React dashboard (IPFS-hosted)
-- `synapse-node/` - Docker node software
-- `synapse-landing/` - Marketing website
-
-## Key Features
-
-✅ **Wallet-only auth** - No email/password database
-✅ **Client-side API keys** - Self-custody
-✅ **P2P mesh routing** - No central API gateway
-✅ **ZK proof verification** - Trustless compute validation
-✅ **Streaming payments** - Per-second HSK payments
-✅ **DAO governance** - Community-controlled
-✅ **IPFS hosting** - Censorship-resistant frontend
+Decentralized AI inference network. Access DeepSeek V3, Llama, and more via API.
 
 ## Quick Start
 
 ```bash
-# 1. Clone
- git clone https://github.com/synapse-network/synapse.git
-cd synapse
+# Start all services
+docker compose up -d
 
-# 2. Install dependencies
-npm install
-
-# 3. Run local dev
-npm run dev
-
-# 4. Deploy contracts
-npm run deploy:sepolia
-
-# 5. Start node
-npm run node:start
+# Run smoke test
+./scripts/smoke-test.sh
 ```
 
-## Documentation
+## Services
 
-- [Whitepaper](./docs/WHITEPAPER.md)
-- [API Reference](./docs/API.md)
-- [Node Setup](./docs/NODE.md)
-- [Architecture](./docs/ARCHITECTURE.md)
+| Service | Port | Description |
+|---------|------|-------------|
+| Web UI | 3000 | Minimal gateway for API key generation |
+| Gateway API | 3001 | OpenAI-compatible API endpoints |
+| Router | 3002 | WebSocket node registry & job dispatch |
+| Node Agent | - | Handles inference jobs (stub mode) |
 
-## License
+## API Usage
 
-MIT - See [LICENSE](./LICENSE)
+### Generate API Key
+```bash
+curl -X POST http://localhost:3001/auth/api-key \
+  -H "Content-Type: application/json" \
+  -d '{"email":"you@example.com"}'
+```
+
+### List Models
+```bash
+curl http://localhost:3001/v1/models
+```
+
+### Chat Completion
+```bash
+curl -X POST http://localhost:3001/v1/chat/completions \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "deepseek-v3",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+```
+
+## Run a Node
+
+```bash
+# One-line installer
+curl -sSL https://synapse.sh/install | bash
+
+# Or manually with Docker
+docker run -d \
+  -e ROUTER_URL=ws://host.docker.internal:3002/ws \
+  -e NODE_WALLET=0xYourWalletAddress \
+  synapse-node-agent
+```
+
+## Architecture
+
+```
+┌─────────────┐     ┌──────────────┐     ┌─────────────┐
+│   Web UI    │────▶│ Gateway API  │────▶│   Router    │
+│  (Port 3000)│     │  (Port 3001) │     │  (Port 3002)│
+└─────────────┘     └──────────────┘     └──────┬──────┘
+                                                 │
+                    ┌─────────────┐             │
+                    │ Node Agent  │◀────────────┘
+                    │ (Stub mode) │
+                    └─────────────┘
+```
+
+## Acceptance Tests
+
+All tests must pass:
+
+1. ✅ `docker compose up -d` starts all services
+2. ✅ `POST /auth/api-key` returns API key
+3. ✅ `GET /v1/models` returns model list
+4. ✅ `POST /v1/chat/completions` returns completion
+5. ✅ Usage events persisted in SQLite
+6. ✅ Router tracks nodes via WebSocket
+7. ✅ Node agent handles jobs
+8. ✅ Minimal gateway UI at `/`
+
+Run tests: `./scripts/smoke-test.sh`
