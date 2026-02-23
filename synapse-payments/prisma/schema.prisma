@@ -1,0 +1,448 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String    @id @default(cuid())
+  email             String    @unique
+  walletAddress     String?   @unique
+  stripeCustomerId  String?   @unique
+  
+  // KYC Status
+  kycStatus         KycStatus @default(none)
+  kycVerifiedAt     DateTime?
+  
+  // User Tier
+  tier              UserTier  @default(free)
+  
+  // Timestamps
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  // Relations
+  payments          Payment[]
+  subscriptions     Subscription[]
+  creditBalance     CreditBalance?
+  creditTransactions CreditTransaction[]
+  kycVerifications  KycVerification[]
+  receipts          Receipt[]
+  cryptoPayments    CryptoPaymentSession[]
+  
+  @@index([walletAddress])
+  @@index([stripeCustomerId])
+  @@index([kycStatus])
+}
+
+model Payment {
+  id                    String        @id @default(cuid())
+  userId                String
+  
+  // Payment Details
+  amount                Decimal       @db.Decimal(19, 4)
+  currency              String        @default("USD")
+  paymentMethod         PaymentMethod
+  status                PaymentStatus @default(pending)
+  
+  // Stripe Integration
+  stripePaymentIntentId String?       @unique
+  stripeChargeId        String?       @unique
+  stripeInvoiceId       String?
+  
+  // Crypto Integration
+  cryptoTxHash          String?       @unique
+  cryptoSessionId       String?
+  
+  // Credits
+  creditsPurchased      Int
+  creditsRate           Int           // Credits per USD * 1000
+  
+  // Metadata
+  metadata              Json          @default("{}")
+  
+  // Receipt
+  receiptUrl            String?
+  
+  // Refunds
+  refundedAmount        Decimal?      @db.Decimal(19, 4)
+  refundReason          String?
+  
+  // Timestamps
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  completedAt           DateTime?
+  
+  // Relations
+  user                  User          @relation(fields: [userId], references: [id])
+  creditTransaction     CreditTransaction?
+  receipt               Receipt?
+  refunds               Refund[]
+  
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([stripePaymentIntentId])
+  @@index([cryptoTxHash])
+}
+
+model Refund {
+  id              String   @id @default(cuid())
+  paymentId       String
+  amount          Decimal  @db.Decimal(19, 4)
+  reason          String?
+  stripeRefundId  String?  @unique
+  status          String   // pending, completed, failed
+  processedAt     DateTime?
+  createdAt       DateTime @default(now())
+  
+  payment         Payment  @relation(fields: [paymentId], references: [id])
+  
+  @@index([paymentId])
+}
+
+model CreditBalance {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  
+  // Balance
+  totalCredits      Int      @default(0)
+  availableCredits  Int      @default(0)
+  reservedCredits   Int      @default(0)
+  
+  // Lifetime Stats
+  lifetimePurchased Int      @default(0)
+  lifetimeUsed      Int      @default(0)
+  
+  // Timestamps
+  lastPurchaseAt    DateTime?
+  updatedAt         DateTime @updatedAt
+  
+  // Relations
+  user              User     @relation(fields: [userId], references: [id])
+}
+
+model CreditTransaction {
+  id            String                @id @default(cuid())
+  userId        String
+  
+  // Transaction Details
+  type          CreditTransactionType
+  amount        Int
+  balanceAfter  Int
+  
+  // Relations
+  paymentId     String?               @unique
+  jobId         String?
+  description   String
+  
+  // Metadata
+  metadata      Json                  @default("{}")
+  
+  // Timestamps
+  createdAt     DateTime              @default(now())
+  
+  // Relations
+  user          User                  @relation(fields: [userId], references: [id])
+  payment       Payment?              @relation(fields: [paymentId], references: [id])
+  
+  @@index([userId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+model Subscription {
+  id                    String             @id @default(cuid())
+  userId                String
+  
+  // Stripe Integration
+  stripeSubscriptionId  String             @unique
+  stripePriceId         String
+  
+  // Status
+  status                SubscriptionStatus
+  
+  // Plan Details
+  tier                  UserTier
+  creditsPerPeriod      Int
+  
+  // Billing Period
+  currentPeriodStart    DateTime
+  currentPeriodEnd      DateTime
+  
+  // Cancellation
+  cancelAtPeriodEnd     Boolean            @default(false)
+  canceledAt            DateTime?
+  
+  // Metadata
+  metadata              Json               @default("{}")
+  
+  // Timestamps
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+  
+  // Relations
+  user                  User               @relation(fields: [userId], references: [id])
+  
+  @@index([userId])
+  @@index([status])
+  @@index([stripeSubscriptionId])
+}
+
+model CryptoPaymentSession {
+  id                String              @id @default(cuid())
+  userId            String
+  
+  // Payment Details
+  amountUsd         Decimal             @db.Decimal(19, 4)
+  creditsToReceive  Int
+  
+  // Crypto Details
+  paymentAddress    String
+  requiredAmount    String              // in wei/token units
+  token             String              // ETH, USDC, USDT, HSK
+  chainId           Int
+  
+  // Status
+  status            CryptoPaymentStatus @default(pending)
+  
+  // Transaction
+  txHash            String?
+  confirmedAt       DateTime?
+  
+  // Expiry
+  expiryTime        DateTime
+  
+  // Timestamps
+  createdAt         DateTime            @default(now())
+  
+  // Relations
+  user              User                @relation(fields: [userId], references: [id])
+  
+  @@index([userId])
+  @@index([status])
+  @@index([paymentAddress])
+  @@index([expiryTime])
+}
+
+model KycVerification {
+  id                  String       @id @default(cuid())
+  userId              String
+  
+  // Provider
+  provider            KycProvider
+  providerApplicantId String?
+  
+  // Status
+  status              KycStatus    @default(none)
+  level               KycLevel     @default(basic)
+  
+  // Timestamps
+  submittedAt         DateTime?
+  reviewedAt          DateTime?
+  
+  // Rejection
+  rejectedReason      String?
+  
+  // Documents
+  documents           Json         @default("[]")
+  
+  // Metadata
+  metadata            Json         @default("{}")
+  
+  // Timestamps
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  
+  // Relations
+  user                User         @relation(fields: [userId], references: [id])
+  
+  @@index([userId])
+  @@index([status])
+}
+
+model Receipt {
+  id              String   @id @default(cuid())
+  paymentId       String   @unique
+  userId          String
+  
+  // Receipt Details
+  receiptNumber   String   @unique
+  issuedAt        DateTime @default(now())
+  
+  // Items
+  items           Json     // Array of receipt items
+  
+  // Totals
+  subtotal        Decimal  @db.Decimal(19, 4)
+  tax             Decimal  @db.Decimal(19, 4)
+  total           Decimal  @db.Decimal(19, 4)
+  currency        String   @default("USD")
+  
+  // Billing Address
+  billingAddress  Json?
+  
+  // Files
+  pdfUrl          String?
+  
+  // Metadata
+  metadata        Json     @default("{}")
+  
+  // Relations
+  payment         Payment  @relation(fields: [paymentId], references: [id])
+  user            User     @relation(fields: [userId], references: [id])
+  
+  @@index([userId])
+  @@index([receiptNumber])
+  @@index([issuedAt])
+}
+
+model CreditPackage {
+  id              String   @id @default(cuid())
+  name            String
+  description     String
+  
+  // Credits
+  credits         Int
+  priceUsd        Decimal  @db.Decimal(19, 4)
+  bonusCredits    Int      @default(0)
+  
+  // Display
+  tier            UserTier
+  isPopular       Boolean  @default(false)
+  isActive        Boolean  @default(true)
+  
+  // Stripe
+  stripePriceId   String?
+  isSubscription  Boolean  @default(false)
+  
+  // Metadata
+  metadata        Json     @default("{}")
+  
+  // Timestamps
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([tier])
+  @@index([isActive])
+}
+
+model WebhookEvent {
+  id              String   @id @default(cuid())
+  provider        String   // stripe, crypto, kyc
+  eventType       String
+  payload         Json
+  processed       Boolean  @default(false)
+  processedAt     DateTime?
+  error           String?
+  createdAt       DateTime @default(now())
+  
+  @@index([provider])
+  @@index([eventType])
+  @@index([processed])
+  @@index([createdAt])
+}
+
+model TaxReport {
+  id                String   @id @default(cuid())
+  userId            String?
+  
+  // Period
+  year              Int
+  quarter           Int?
+  
+  // Totals
+  totalRevenue      Decimal  @db.Decimal(19, 4)
+  totalRefunds      Decimal  @db.Decimal(19, 4)
+  totalTaxCollected Decimal  @db.Decimal(19, 4)
+  
+  // Transactions (simplified - reference to payments)
+  transactionIds    String[] // Array of payment IDs
+  
+  // Files
+  pdfUrl            String?
+  csvUrl            String?
+  
+  // Metadata
+  metadata          Json     @default("{}")
+  
+  // Timestamps
+  generatedAt       DateTime @default(now())
+  
+  @@index([year])
+  @@index([quarter])
+}
+
+// Enums
+enum KycStatus {
+  none
+  pending
+  verified
+  rejected
+}
+
+enum UserTier {
+  free
+  basic
+  pro
+  enterprise
+}
+
+enum PaymentMethod {
+  stripe
+  crypto
+  credits
+}
+
+enum PaymentStatus {
+  pending
+  processing
+  completed
+  failed
+  refunded
+  partially_refunded
+  cancelled
+}
+
+enum SubscriptionStatus {
+  incomplete
+  incomplete_expired
+  trialing
+  active
+  past_due
+  canceled
+  unpaid
+  paused
+}
+
+enum CreditTransactionType {
+  purchase
+  usage
+  refund
+  bonus
+  subscription
+  adjustment
+  promo
+}
+
+enum CryptoPaymentStatus {
+  pending
+  paid
+  expired
+  cancelled
+}
+
+enum KycProvider {
+  sumsub
+  onfido
+  stripe
+}
+
+enum KycLevel {
+  basic
+  standard
+  enhanced
+}

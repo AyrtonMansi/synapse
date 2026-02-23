@@ -1,0 +1,174 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "Synapse Network Overview",
+    "tags": ["synapse", "mainnet"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Node Count",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "count(up{job=\"synapse-node\"})",
+            "legendFormat": "Active Nodes"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 4, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "API Requests/min",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rate(http_requests_total[1m])",
+            "legendFormat": "Requests"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 4, "x": 4, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Average Response Time",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "95th Percentile"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 4, "x": 8, "y": 0}
+      },
+      {
+        "id": 4,
+        "title": "Error Rate",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rate(http_requests_total{status=~\"5..\"}[5m]) / rate(http_requests_total[5m])",
+            "legendFormat": "Error %"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 4, "x": 12, "y": 0}
+      },
+      {
+        "id": 5,
+        "title": "Active Jobs",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "increase(job_created_total[24h])",
+            "legendFormat": "Jobs (24h)"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 4, "x": 16, "y": 0}
+      },
+      {
+        "id": 6,
+        "title": "Node Earnings (HSK)",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "increase(node_earnings_total[24h])",
+            "legendFormat": "Earnings (24h)"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 4, "x": 20, "y": 0}
+      },
+      {
+        "id": 7,
+        "title": "Node Status",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "up{job=\"synapse-node\"}",
+            "format": "table",
+            "instant": true
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4}
+      },
+      {
+        "id": 8,
+        "title": "API Gateway Status",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "up{job=\"synapse-api-gateway\"}",
+            "format": "table",
+            "instant": true
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4}
+      },
+      {
+        "id": 9,
+        "title": "API Request Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(http_requests_total[5m])",
+            "legendFormat": "{{method}} {{status}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12}
+      },
+      {
+        "id": 10,
+        "title": "Response Time Distribution",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, rate(http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "50th percentile"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "95th percentile"
+          },
+          {
+            "expr": "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "99th percentile"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12}
+      },
+      {
+        "id": 11,
+        "title": "System Resources",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "100 - (avg by (instance) (irate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+            "legendFormat": "CPU Usage %"
+          },
+          {
+            "expr": "(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100",
+            "legendFormat": "Memory Usage %"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 20}
+      },
+      {
+        "id": 12,
+        "title": "Smart Contract Events",
+        "type": "logs",
+        "targets": [
+          {
+            "expr": "{job=\"synapse-subgraph\"}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 28}
+      }
+    ],
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    },
+    "refresh": "30s",
+    "schemaVersion": 27
+  }
+}

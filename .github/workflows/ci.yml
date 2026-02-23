@@ -1,0 +1,68 @@
+name: Synapse CI/CD
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./synapse-contracts
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - run: npm ci
+      - run: npx hardhat compile
+      - run: npx hardhat test
+      - run: npx solhint 'contracts/**/*.sol'
+
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./synapse-backend
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test
+      - run: npm run build
+
+  frontend:
+    runs-on: ubuntu-latestn    defaults:
+      run:
+        working-directory: ./synapse-frontend
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - name: Deploy to IPFS
+        uses: aquiladev/ipfs-action@v2
+        with:
+          path: ./dist
+          pinName: synapse-frontend
+
+  node:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./synapse-node
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build Docker image
+        run: docker build -t synapse/node:latest .
+      - name: Test Docker image
+        run: docker run synapse/node:latest --version

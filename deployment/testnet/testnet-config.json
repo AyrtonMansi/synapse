@@ -1,0 +1,100 @@
+{
+  "name": "synapse-testnet",
+  "version": "1.0.0",
+  "description": "Synapse Testnet Deployment Configuration",
+  "network": "sepolia",
+  "chainId": 11155111,
+  "rpc": {
+    "primary": "https://sepolia.infura.io/v3/${INFURA_KEY}",
+    "fallback": "https://rpc.sepolia.org",
+    "alchemy": "https://eth-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
+  },
+  "contracts": {
+    "HSKToken": {
+      "name": "HSKToken",
+      "args": ["DAO_ADDRESS", "TREASURY_ADDRESS"],
+      "gasLimit": 3000000,
+      "verify": true
+    },
+    "TreasuryDAO": {
+      "name": "TreasuryDAO",
+      "args": ["HSK_TOKEN", "PROPOSERS", "EXECUTORS"],
+      "gasLimit": 2500000,
+      "verify": true
+    },
+    "PriceOracle": {
+      "name": "PriceOracle",
+      "args": ["DAO_ADDRESS"],
+      "gasLimit": 1500000,
+      "verify": true
+    },
+    "DisputeResolver": {
+      "name": "DisputeResolver",
+      "args": ["DAO_ADDRESS"],
+      "gasLimit": 2000000,
+      "verify": true
+    },
+    "JobRegistry": {
+      "name": "JobRegistry",
+      "args": ["TREASURY_ADDRESS", "DAO_ADDRESS"],
+      "gasLimit": 3000000,
+      "verify": true
+    },
+    "StreamingPayments": {
+      "name": "StreamingPayments",
+      "args": ["TREASURY_ADDRESS", "DAO_ADDRESS"],
+      "gasLimit": 2000000,
+      "verify": true
+    }
+  },
+  "configuration": {
+    "confirmations": 2,
+    "gasPriceMultiplier": 1.1,
+    "autoVerify": true
+  },
+  "testAccounts": [
+    {
+      "name": "test-deployer",
+      "role": "primary",
+      "minBalance": "0.5"
+    },
+    {
+      "name": "test-operator-1",
+      "role": "node-operator",
+      "minBalance": "0.1"
+    },
+    {
+      "name": "test-operator-2",
+      "role": "node-operator",
+      "minBalance": "0.1"
+    },
+    {
+      "name": "test-client-1",
+      "role": "client",
+      "minBalance": "0.1"
+    },
+    {
+      "name": "test-client-2",
+      "role": "client",
+      "minBalance": "0.1"
+    },
+    {
+      "name": "test-arbitrator",
+      "role": "arbitrator",
+      "minBalance": "0.1"
+    }
+  ],
+  "faucets": [
+    "https://sepoliafaucet.com",
+    "https://www.infura.io/faucet/sepolia",
+    "https://faucet.quicknode.com/ethereum/sepolia"
+  ],
+  "explorers": {
+    "etherscan": "https://sepolia.etherscan.io",
+    "blockscout": "https://eth-sepolia.blockscout.com"
+  },
+  "subgraph": {
+    "studio": "https://api.studio.thegraph.com/query",
+    "deploymentName": "synapse-sepolia"
+  }
+}
