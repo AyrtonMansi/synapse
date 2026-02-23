@@ -13,12 +13,20 @@ export function initDb() {
     CREATE TABLE IF NOT EXISTS api_keys (
       id TEXT PRIMARY KEY,
       key_hash TEXT NOT NULL UNIQUE,
+      key_id_prefix TEXT,
       owner_email TEXT,
       owner_wallet TEXT,
       created_at INTEGER NOT NULL,
       revoked_at INTEGER,
+      last_used_at INTEGER,
+      use_count INTEGER DEFAULT 0,
       metadata TEXT
     )
+  `);
+  
+  // Create index on key_id_prefix for fast lookup
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_api_keys_prefix ON api_keys(key_id_prefix)
   `);
 
   // Usage events table with receipt fields

@@ -1,19 +1,59 @@
-name: Build and Push All Images
+name: Build, Test, and Push All Images
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
     tags: ['v*']
+  pull_request:
+    branches: [main]
 
 env:
   REGISTRY: ghcr.io
 
 jobs:
-  build-and-push:
+  # ============================================================
+  # Phase 1: Run Smoke Tests on PR/Push
+  # ============================================================
+  smoke-test:
     runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Start services
+        run: |
+          docker compose up -d --build
+          echo "Waiting for services to start..."
+          sleep 20
+
+      - name: Run smoke tests
+        run: |
+          chmod +x scripts/smoke-test.sh
+          ./scripts/smoke-test.sh
+        timeout-minutes: 5
+
+      - name: Collect logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v
+
+  # ============================================================
+  # Phase 2: Build and Push Multi-Arch Images
+  # ============================================================
+  build-and-push:
+    needs: smoke-test
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
     permissions:
       contents: read
       packages: write
+      security-events: write
 
     strategy:
       matrix:
@@ -22,6 +62,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up QEMU (for multi-arch)
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -41,15 +84,59 @@ jobs:
           tags: |
             type=ref,event=branch
             type=ref,event=tag
-            type=sha
+            type=sha,prefix={{branch}}-
+            type=sha,prefix=,suffix=,format=short
             latest
 
-      - name: Build and push
+      - name: Build and push multi-arch
         uses: docker/build-push-action@v5
         with:
           context: ./services/${{ matrix.service }}
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ github.repository }}-${{ matrix.service }}:${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-results-${{ matrix.service }}.sarif'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results-${{ matrix.service }}.sarif'
+
+  # ============================================================
+  # Phase 3: Generate SBOM
+  # ============================================================
+  generate-sbom:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      matrix:
+        service: [gateway-api, router, node-agent, web-ui]
+
+    steps:
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ github.repository }}-${{ matrix.service }}:${{ github.sha }}
+          format: spdx-json
+          output-file: sbom-${{ matrix.service }}.spdx.json
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ matrix.service }}
+          path: sbom-${{ matrix.service }}.spdx.json

@@ -1,13 +1,43 @@
 import Fastify from 'fastify';
 import websocket from '@fastify/websocket';
 import cors from '@fastify/cors';
+import helmet from '@fastify/helmet';
 import { randomUUID } from 'crypto';
 
-const app = Fastify({ logger: true });
+const app = Fastify({ 
+  logger: true,
+  bodyLimit: 1024 * 1024, // 1MB max body
+});
+
+// Configuration
+const ROUTER_SECRET = process.env.ROUTER_SECRET;
+const ENABLE_DISPATCH_AUTH = process.env.ENABLE_DISPATCH_AUTH === 'true';
+
+// Security headers
+await app.register(helmet, {
+  contentSecurityPolicy: false,
+});
 
 // Register plugins
-await app.register(cors, { origin: true });
+await app.register(cors, { 
+  origin: process.env.NODE_ENV === 'production' 
+    ? process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3001']
+    : true 
+});
 await app.register(websocket);
+
+// Auth hook for dispatch endpoint
+app.addHook('onRequest', async (request, reply) => {
+  // Only protect dispatch endpoint
+  if (request.url !== '/dispatch') return;
+  if (!ENABLE_DISPATCH_AUTH || !ROUTER_SECRET) return;
+  
+  const authHeader = request.headers['x-router-secret'];
+  if (authHeader !== ROUTER_SECRET) {
+    reply.code(401).send({ error: 'Unauthorized' });
+    return;
+  }
+});
 
 // Enhanced node interface with reliability tracking
 interface Node {

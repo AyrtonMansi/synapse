@@ -1,18 +1,50 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import helmet from '@fastify/helmet';
+import rateLimit from '@fastify/rate-limit';
+import { ZodError } from 'zod';
 import { createApiKey, validateApiKey } from './db/apiKeys.js';
 import { createUsageEvent } from './db/usage.js';
 import { dispatchJob } from './router/client.js';
 import { randomUUID } from 'crypto';
+import { 
+  createApiKeySchema, 
+  chatCompletionSchema,
+  type CreateApiKeyInput,
+  type ChatCompletionInput 
+} from './schemas.js';
 
 const app = Fastify({
-  logger: true
+  logger: true,
+  // Request size limits to prevent DoS
+  bodyLimit: 1024 * 1024, // 1MB max body size
 });
 
-// Enable CORS
+// Security headers
+await app.register(helmet, {
+  contentSecurityPolicy: false, // Disable for API
+});
+
+// Enable CORS with restricted origins in production
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'];
 await app.register(cors, {
-  origin: true,
-  credentials: true
+  origin: process.env.NODE_ENV === 'production' ? allowedOrigins : true,
+  credentials: true,
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+});
+
+// Rate limiting
+await app.register(rateLimit, {
+  max: 100,
+  timeWindow: '1 minute',
+  keyGenerator: (req) => req.ip || 'unknown',
+  errorResponseBuilder: (req, context) => ({
+    statusCode: 429,
+    error: 'Too Many Requests',
+    message: `Rate limit exceeded. Try again in ${context.after}`,
+    retryAfter: context.after,
+  }),
 });
 
 // Models configuration
@@ -25,7 +57,8 @@ const MODELS = [
 app.addHook('onRequest', async (request, reply) => {
   // Skip auth for specific routes
   const publicRoutes = ['/health', '/auth/api-key', '/v1/models', '/stats'];
-  if (publicRoutes.includes(request.url)) return;
+  const url = new URL(request.url, `http://${request.host}`);
+  if (publicRoutes.includes(url.pathname)) return;
   
   const authHeader = request.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
@@ -34,7 +67,14 @@ app.addHook('onRequest', async (request, reply) => {
   }
   
   const key = authHeader.slice(7);
-  const apiKey = validateApiKey(key);
+  
+  // Validate key format before DB lookup
+  if (!key.startsWith('syn_') || key.length < 20) {
+    reply.code(401).send({ error: 'Invalid API key format' });
+    return;
+  }
+  
+  const apiKey = await validateApiKey(key);
   
   if (!apiKey) {
     reply.code(401).send({ error: 'Invalid API key' });
@@ -51,7 +91,7 @@ app.get('/health', async () => ({ status: 'ok', service: 'gateway-api' }));
 // Stats endpoint (public, used by web UI)
 let cachedStats: any = null;
 let statsCacheTime = 0;
-const STATS_CACHE_TTL = 2000; // 2 seconds
+const STATS_CACHE_TTL = parseInt(process.env.STATS_CACHE_TTL || '5000'); // 5 seconds default
 
 app.get('/stats', async () => {
   const now = Date.now();
@@ -101,20 +141,26 @@ app.get('/stats', async () => {
 
 // Generate API key
 app.post('/auth/api-key', async (request, reply) => {
-  const { email, wallet } = request.body as { email?: string; wallet?: string };
-  
-  if (!email && !wallet) {
-    reply.code(400).send({ error: 'Email or wallet required' });
-    return;
+  try {
+    const body = createApiKeySchema.parse(request.body);
+    
+    const result = createApiKey(body);
+    
+    return {
+      api_key: result.key,
+      id: result.id,
+      created_at: Date.now()
+    };
+  } catch (error) {
+    if (error instanceof ZodError) {
+      reply.code(400).send({ 
+        error: 'Validation error', 
+        details: error.errors.map(e => ({ path: e.path.join('.'), message: e.message }))
+      });
+      return;
+    }
+    throw error;
   }
-  
-  const result = createApiKey({ email, wallet });
-  
-  return {
-    api_key: result.key,
-    id: result.id,
-    created_at: Date.now()
-  };
 });
 
 // List models (OpenAI compatible)
@@ -126,20 +172,22 @@ app.get('/v1/models', async () => ({
 // Chat completions (OpenAI compatible)
 app.post('/v1/chat/completions', async (request, reply) => {
   const startTime = Date.now();
-  const body = request.body as {
-    model: string;
-    messages: Array<{ role: string; content: string }>;
-    stream?: boolean;
-    temperature?: number;
-    max_tokens?: number;
-  };
+  
+  let body: ChatCompletionInput;
+  try {
+    body = chatCompletionSchema.parse(request.body);
+  } catch (error) {
+    if (error instanceof ZodError) {
+      reply.code(400).send({ 
+        error: 'Validation error', 
+        details: error.errors.map(e => ({ path: e.path.join('.'), message: e.message }))
+      });
+      return;
+    }
+    throw error;
+  }
   
   const { model, messages } = body;
-  
-  if (!model || !messages?.length) {
-    reply.code(400).send({ error: 'Model and messages required' });
-    return;
-  }
   
   // Check if model exists
   if (!MODELS.find(m => m.id === model)) {

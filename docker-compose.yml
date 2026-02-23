@@ -29,9 +29,9 @@ services:
     build: ./services/node-agent
     environment:
       - ROUTER_URL=ws://router:3002/ws
-      - NODE_WALLET=0xStubNodeWallet123
-      - MODEL_PROFILE=echo-stub
-      - NODE_ID=stub-node-001
+      - NODE_WALLET=${NODE_WALLET:-0xStubNodeWallet123}
+      - MODEL_PROFILE=${MODEL_PROFILE:-echo-stub}
+      - NODE_ID=${NODE_ID:-stub-node-001}
     depends_on:
       - router
     networks:
@@ -44,10 +44,10 @@ services:
       - gpu
     environment:
       - ROUTER_URL=ws://router:3002/ws
-      - NODE_WALLET=0xVLLMNodeWallet456
-      - MODEL_PROFILE=vllm
-      - NODE_ID=vllm-node-001
-      - VLLM_URL=http://vllm:8000/v1
+      - NODE_WALLET=${VLLM_NODE_WALLET:-0xVLLMNodeWallet456}
+      - MODEL_PROFILE=${VLLM_MODEL_PROFILE:-vllm}
+      - NODE_ID=${VLLM_NODE_ID:-vllm-node-001}
+      - VLLM_URL=${VLLM_URL:-http://vllm:8000/v1}
     depends_on:
       - router
       - vllm
