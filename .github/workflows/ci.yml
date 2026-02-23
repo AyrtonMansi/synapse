@@ -132,6 +132,24 @@ jobs:
         run: |
           ! grep -r "private.*key" --include="*.ts" --include="*.sol" services/ hsk-contracts/ | grep -v ".env.example" || (echo "Potential secret in code" && exit 1)
 
+  # 6b. Billing Tests (PHASE 1)
+  billing-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          
+      - name: Install billing dependencies
+        run: cd services/billing && npm ci || npm install
+        
+      - name: Run billing tests
+        run: cd services/billing && npm test
+
   # 7. Integration Test (Docker Compose)
   integration-test:
     runs-on: ubuntu-latest
@@ -179,6 +197,7 @@ jobs:
       - k8s-validate
       - terraform-validate
       - truth-check
+      - billing-test
       - integration-test
       - docs-check
     steps:
