@@ -1,0 +1,286 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --terminal-bg: #0a0a0a;
+    --terminal-surface: #111111;
+    --terminal-elevated: #1a1a1a;
+    --terminal-border: #262626;
+    --terminal-muted: #404040;
+    --terminal-text: #e5e5e5;
+    --terminal-dim: #a3a3a3;
+    --terminal-accent: #10b981;
+    --terminal-accent-dim: #059669;
+  }
+
+  html {
+    @apply antialiased;
+    scroll-behavior: smooth;
+  }
+  
+  body {
+    @apply bg-terminal-bg text-terminal-text font-sans;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  
+  ::selection {
+    @apply bg-terminal-accent/30;
+  }
+}
+
+@layer components {
+  /* Terminal Card Component */
+  .terminal-card {
+    @apply bg-terminal-surface/50 backdrop-blur-sm border border-terminal-border rounded-xl;
+    @apply hover:border-terminal-accent/30 transition-all duration-300;
+  }
+
+  .terminal-card-elevated {
+    @apply bg-terminal-elevated border border-terminal-border rounded-xl;
+    @apply hover:border-terminal-accent/30 transition-all duration-300;
+  }
+
+  /* Terminal Button Components */
+  .terminal-btn {
+    @apply bg-terminal-accent/10 border border-terminal-accent/50 text-terminal-accent;
+    @apply px-4 py-2 rounded-lg font-mono text-sm;
+    @apply hover:bg-terminal-accent/20 transition-all;
+  }
+
+  .terminal-btn-primary {
+    @apply bg-terminal-accent text-terminal-bg;
+    @apply px-4 py-2 rounded-lg font-semibold text-sm;
+    @apply hover:bg-terminal-accentDim transition-all hover:shadow-terminal-glow-sm;
+  }
+
+  .terminal-btn-secondary {
+    @apply bg-terminal-surface border border-terminal-border text-terminal-text;
+    @apply px-4 py-2 rounded-lg font-medium text-sm;
+    @apply hover:border-terminal-accent/50 hover:bg-terminal-elevated transition-all;
+  }
+
+  /* Terminal Input */
+  .terminal-input {
+    @apply bg-terminal-bg border border-terminal-border rounded-lg;
+    @apply px-4 py-3 text-terminal-text placeholder-terminal-muted;
+    @apply focus:outline-none focus:border-terminal-accent/50;
+    @apply font-mono text-sm transition-all;
+  }
+
+  /* Terminal Window */
+  .terminal-window {
+    @apply bg-terminal-surface border border-terminal-border rounded-xl overflow-hidden;
+  }
+
+  .terminal-window-header {
+    @apply bg-terminal-elevated border-b border-terminal-border px-4 py-3;
+    @apply flex items-center justify-between;
+  }
+
+  .terminal-window-body {
+    @apply p-4 font-mono text-sm;
+  }
+
+  /* Status Indicators */
+  .status-indicator {
+    @apply w-2 h-2 rounded-full;
+  }
+
+  .status-indicator.active {
+    @apply bg-terminal-accent shadow-terminal-glow-sm;
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+
+  .status-indicator.warning {
+    @apply bg-terminal-amber;
+  }
+
+  .status-indicator.error {
+    @apply bg-terminal-red;
+  }
+
+  /* Code Block */
+  .terminal-code {
+    @apply bg-terminal-bg border border-terminal-border rounded-lg;
+    @apply p-4 font-mono text-sm overflow-x-auto;
+  }
+
+  /* Grid Background */
+  .bg-grid {
+    background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.03) 1px, transparent 0);
+    background-size: 24px 24px;
+  }
+
+  /* Glass Effect */
+  .glass {
+    @apply bg-terminal-surface/50 backdrop-blur-xl border border-terminal-border;
+  }
+
+  /* Glow Effects */
+  .glow-accent {
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+  }
+
+  .text-glow {
+    text-shadow: 0 0 10px currentColor;
+  }
+
+  /* Animations */
+  .animate-pulse-glow {
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 0 5px rgba(16, 185, 129, 0.5); }
+    50% { box-shadow: 0 0 20px rgba(16, 185, 129, 0.8); }
+  }
+
+  /* Scrollbar */
+  .terminal-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: var(--terminal-muted) var(--terminal-bg);
+  }
+
+  .terminal-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .terminal-scrollbar::-webkit-scrollbar-track {
+    @apply bg-terminal-bg;
+  }
+
+  .terminal-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-terminal-muted rounded;
+  }
+
+  .terminal-scrollbar::-webkit-scrollbar-thumb:hover {
+    @apply bg-terminal-dim;
+  }
+}
+
+/* Custom Scrollbar Global */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--terminal-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--terminal-muted);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #525252;
+}
+
+/* Code blocks */
+pre {
+  @apply bg-terminal-bg rounded-lg p-4 overflow-x-auto border border-terminal-border;
+}
+
+code {
+  @apply font-mono text-sm;
+}
+
+/* Gradient text */
+.gradient-text {
+  @apply bg-gradient-to-r from-terminal-accent to-terminal-cyan bg-clip-text text-transparent;
+}
+
+/* Focus visible styles */
+*:focus-visible {
+  @apply outline-none ring-2 ring-terminal-accent/50;
+}
+
+/* RainbowKit Custom Theme */
+[data-rk] .ju367v1i {
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+/* Table styles */
+table {
+  @apply w-full border-collapse;
+}
+
+th, td {
+  @apply px-4 py-3 text-left;
+}
+
+/* Line clamp */
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Cursor blink */
+.cursor-blink::after {
+  content: '█';
+  animation: blink 1s step-end infinite;
+  @apply text-terminal-accent ml-0.5;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Command prompt */
+.command-prompt::before {
+  content: '$ ';
+  @apply text-terminal-accent select-none;
+}
+
+/* Terminal cursor */
+.terminal-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 1.2em;
+  background: var(--terminal-accent);
+  animation: blink 1s step-end infinite;
+  vertical-align: text-bottom;
+  margin-left: 2px;
+}
+
+/* Scanline effect */
+.scanline::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.03) 2px,
+    rgba(0,0,0,0.03) 4px
+  );
+  pointer-events: none;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  html {
+    font-size: 14px;
+  }
+}

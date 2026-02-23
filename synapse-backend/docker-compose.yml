@@ -1,0 +1,314 @@
+version: '3.8'
+
+services:
+  # ==========================================
+  # IPFS Node (decentralized storage)
+  # ==========================================
+  ipfs:
+    image: ipfs/kubo:latest
+    container_name: synapse-ipfs
+    restart: unless-stopped
+    ports:
+      - "4001:4001"      # Swarm port
+      - "4001:4001/udp"  # Swarm UDP
+      - "5001:5001"      # API port
+      - "8080:8080"      # Gateway port
+    volumes:
+      - ipfs-data:/data/ipfs
+    environment:
+      - IPFS_PROFILE=server
+      - IPFS_SWARM_KEY=/key/swarm.key
+      - IPFS_API_HTTP_HEADERS_ACCESS_CONTROL_ALLOW_ORIGIN=["*"]
+      - IPFS_API_HTTP_HEADERS_ACCESS_CONTROL_ALLOW_METHODS=["PUT","POST","GET"]
+    command:
+      - daemon
+      - --migrate=true
+      - --enable-gc
+      - --routing=dhtserver
+    networks:
+      - synapse-network
+    healthcheck:
+      test: ["CMD", "ipfs", "id"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ==========================================
+  # Local Ethereum Node (Hardhat/Anvil)
+  # ==========================================
+  ethereum:
+    image: ghcr.io/foundry-rs/foundry:latest
+    container_name: synapse-ethereum
+    restart: unless-stopped
+    ports:
+      - "8545:8545"
+    volumes:
+      - ./contracts:/contracts
+    command: >
+      anvil
+      --fork-url ${MAINNET_RPC:-}
+      --block-time 12
+      --host 0.0.0.0
+      --state /contracts/anvil-state.json
+    networks:
+      - synapse-network
+    healthcheck:
+      test: ["CMD", "cast", "block-number", "--rpc-url", "http://localhost:8545"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================
+  # The Graph Node (local indexer)
+  # ==========================================
+  graph-node:
+    image: graphprotocol/graph-node:latest
+    container_name: synapse-graph-node
+    restart: unless-stopped
+    ports:
+      - "8000:8000"      # GraphQL HTTP
+      - "8001:8001"      # GraphQL WS
+      - "8020:8020"      # JSON-RPC
+      - "8030:8030"      # Indexing status
+      - "8040:8040"      # Metrics
+    depends_on:
+      - ipfs
+      - ethereum
+      - postgres
+    environment:
+      - postgres_host=postgres
+      - postgres_user=graph
+      - postgres_pass=graph
+      - postgres_db=graph
+      - ipfs=ipfs:5001
+      - ethereum=mainnet:http://ethereum:8545
+      - GRAPH_LOG=info
+      - GRAPH_ALLOW_NON_DETERMINISTIC_IPFS=true
+      - GRAPH_ETHEREUM_CLEANUP_BLOCKS=false
+      - GRAPH_ETH_CALL_BY_NUMBER=false
+      - GRAPH_GETH_ETH_CALL_ERRORS="out of gas"
+    networks:
+      - synapse-network
+    volumes:
+      - graph-data:/data
+
+  # ==========================================
+  # PostgreSQL (for The Graph only)
+  # ==========================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: synapse-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=graph
+      - POSTGRES_PASSWORD=graph
+      - POSTGRES_DB=graph
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - synapse-network
+    command: >
+      postgres
+      -c shared_preload_libraries=pg_stat_statements
+      -c max_connections=200
+
+  # ==========================================
+  # API Gateway
+  # ==========================================
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: synapse-api-gateway
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - RPC_URL=http://ethereum:8545
+      - IPFS_API_URL=http://ipfs:5001
+      - JWT_SECRET=${JWT_SECRET:-synapse-dev-secret}
+      - DOMAIN=localhost
+      - RATE_LIMIT_CONTRACT=${RATE_LIMIT_CONTRACT:-}
+      - JOB_CONTRACT=${JOB_CONTRACT:-}
+      - LOG_LEVEL=info
+    depends_on:
+      - ethereum
+      - ipfs
+    networks:
+      - synapse-network
+    volumes:
+      - ./api-gateway/src:/app/src
+      - ./logs/api-gateway:/app/logs
+    command: npm run dev
+
+  # ==========================================
+  # Job Router (P2P Coordinator)
+  # ==========================================
+  job-router:
+    build:
+      context: ./job-router
+      dockerfile: Dockerfile
+    container_name: synapse-job-router
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+      - "10000-10100:10000-10100"  # P2P ports
+    environment:
+      - NODE_ENV=development
+      - PORT=4000
+      - NETWORK_ID=local-dev
+      - BOOTSTRAP_PEERS=${BOOTSTRAP_PEERS:-}
+      - CAPABILITIES=compute,storage,ai
+      - MAX_CONCURRENT_JOBS=5
+      - LOG_LEVEL=info
+    networks:
+      - synapse-network
+    volumes:
+      - ./job-router/src:/app/src
+    command: npm run dev
+
+  # ==========================================
+  # IPFS Service (pinning & management)
+  # ==========================================
+  ipfs-service:
+    build:
+      context: ./ipfs-service
+      dockerfile: Dockerfile
+    container_name: synapse-ipfs-service
+    restart: unless-stopped
+    ports:
+      - "5002:5002"
+    environment:
+      - NODE_ENV=development
+      - PORT=5002
+      - IPFS_API_URL=http://ipfs:5001
+      - PINNING_SERVICE=${PINNING_SERVICE:-}
+      - PINNING_KEY=${PINNING_KEY:-}
+    depends_on:
+      - ipfs
+    networks:
+      - synapse-network
+    volumes:
+      - ./ipfs-service/src:/app/src
+    command: npm run dev
+
+  # ==========================================
+  # Contract Deployer (one-time setup)
+  # ==========================================
+  contract-deployer:
+    build:
+      context: ./contracts
+      dockerfile: Dockerfile
+    container_name: synapse-contract-deployer
+    environment:
+      - RPC_URL=http://ethereum:8545
+      - PRIVATE_KEY=${DEPLOYER_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}
+    depends_on:
+      ethereum:
+        condition: service_healthy
+    networks:
+      - synapse-network
+    volumes:
+      - ./contracts:/contracts
+      - contract-artifacts:/contracts/artifacts
+    command: >
+      sh -c "forge script DeployScript --broadcast --rpc-url http://ethereum:8545 && cp artifacts/addresses.json /shared/contract-addresses.json"
+    profiles:
+      - setup
+
+  # ==========================================
+  # Subgraph Deployer (one-time setup)
+  # ==========================================
+  subgraph-deployer:
+    build:
+      context: ./subgraph
+      dockerfile: Dockerfile
+    container_name: synapse-subgraph-deployer
+    environment:
+      - GRAPH_NODE_URL=http://graph-node:8020
+      - IPFS_URL=http://ipfs:5001
+    depends_on:
+      - graph-node
+      - ipfs
+    networks:
+      - synapse-network
+    volumes:
+      - ./subgraph:/subgraph
+      - contract-artifacts:/shared:ro
+    command: >
+      sh -c "
+        wait-for-it graph-node:8020 -t 60 &&
+        npm run codegen &&
+        npm run build &&
+        npm run create-local synapse-local &&
+        npm run deploy-local synapse-local
+      "
+    profiles:
+      - setup
+
+  # ==========================================
+  # Monitoring (optional)
+  # ==========================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: synapse-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    networks:
+      - synapse-network
+    profiles:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: synapse-grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRafana_PASSWORD:-admin}
+      - GF_INSTALL_PLUGINS=grafana-clock-panel
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    networks:
+      - synapse-network
+    profiles:
+      - monitoring
+
+# ==========================================
+# Volumes
+# ==========================================
+volumes:
+  ipfs-data:
+    driver: local
+  postgres-data:
+    driver: local
+  graph-data:
+    driver: local
+  contract-artifacts:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+
+# ==========================================
+# Networks
+# ==========================================
+networks:
+  synapse-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

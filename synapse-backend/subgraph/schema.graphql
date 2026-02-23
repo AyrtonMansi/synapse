@@ -1,0 +1,229 @@
+# Synapse Subgraph Schema
+# Fully decentralized compute network indexing
+
+# ==================== Core Entities ====================
+
+type Job @entity {
+  id: ID!                          # jobId (bytes32 as hex string)
+  jobType: String!                 # Type of computation job
+  creator: User!                   # Job creator
+  worker: User                     # Assigned worker (null if pending)
+  
+  # Job details
+  inputCid: String!                # IPFS CID for job input
+  resultCid: String                # IPFS CID for job result (null until completed)
+  payment: BigInt!                 # Payment amount in wei
+  timeout: BigInt!                 # Timeout in seconds
+  
+  # Status tracking
+  status: JobStatus!               # Current job status
+  createdAt: BigInt!               # Block timestamp
+  assignedAt: BigInt               # When assigned to worker
+  completedAt: BigInt              # When completed
+  cancelledAt: BigInt              # When cancelled (if applicable)
+  
+  # Relationships
+  payment: Payment                 # Associated payment
+  disputes: [Dispute!]! @derivedFrom(field: "job")
+  reputationUpdates: [ReputationUpdate!]! @derivedFrom(field: "job")
+}
+
+type User @entity {
+  id: ID!                          # Ethereum address
+  
+  # Jobs
+  jobsCreated: [Job!]! @derivedFrom(field: "creator")
+  jobsWorked: [Job!]! @derivedFrom(field: "worker")
+  jobsCreatedCount: BigInt!        # Total jobs created
+  jobsCompletedCount: BigInt!      # Total jobs completed as worker
+  
+  # Reputation
+  reputation: Reputation!          # Current reputation score
+  reputationHistory: [ReputationUpdate!]! @derivedFrom(field: "user")
+  
+  # Payments
+  totalEarned: BigInt!             # Total earned as worker
+  totalPaid: BigInt!               # Total paid as creator
+  paymentsReceived: [Payment!]! @derivedFrom(field: "recipient")
+  paymentsSent: [Payment!]! @derivedFrom(field: "sender")
+  
+  # Rate limiting
+  rateLimit: RateLimit             # Rate limit config
+  quotaUsage: QuotaUsage           # Current quota usage
+  
+  # Metadata
+  firstSeenAt: BigInt!             # First interaction
+  lastActiveAt: BigInt!            # Most recent activity
+}
+
+type Payment @entity {
+  id: ID!                          # paymentId or jobId
+  job: Job!                        # Associated job
+  sender: User!                    # Payment sender
+  recipient: User!                 # Payment recipient (worker)
+  amount: BigInt!                  # Amount in wei
+  status: PaymentStatus!           # Payment status
+  
+  # Timestamps
+  createdAt: BigInt!               # When payment escrowed
+  releasedAt: BigInt               # When released to worker
+  disputedAt: BigInt               # When disputed (if applicable)
+  
+  # Dispute resolution
+  disputeReason: String            # Reason if disputed
+  resolver: User                   # Who resolved (if applicable)
+  resolution: String               # Resolution details
+}
+
+# ==================== Reputation System ====================
+
+type Reputation @entity {
+  id: ID!                          # Same as user address
+  user: User!                      # Associated user
+  score: BigInt!                   # Current score (0-1000)
+  
+  # Breakdown
+  jobsCompleted: BigInt!           # Jobs completed successfully
+  jobsFailed: BigInt!              # Jobs failed/cancelled
+  disputesInitiated: BigInt!       # Disputes started
+  disputesLost: BigInt!            # Disputes lost
+  
+  # History
+  history: [ReputationUpdate!]! @derivedFrom(field: "reputation")
+  lastUpdatedAt: BigInt!           # Last update timestamp
+}
+
+type ReputationUpdate @entity {
+  id: ID!                          # txHash + logIndex
+  user: User!                      # Affected user
+  reputation: Reputation!          # Parent reputation
+  job: Job                         # Related job (if any)
+  
+  # Update details
+  delta: BigInt!                   # Score change (+/-)
+  newScore: BigInt!                # Score after update
+  reason: String!                  # Reason for update
+  
+  # Metadata
+  updatedBy: User!                 # Who triggered update
+  blockNumber: BigInt!             # Block number
+  timestamp: BigInt!               # Block timestamp
+  transactionHash: String!         # Transaction hash
+}
+
+# ==================== Rate Limiting ====================
+
+type RateLimit @entity {
+  id: ID!                          # Same as user address
+  user: User!                      # Associated user
+  
+  # Limits
+  requestsPerMinute: BigInt!       # Per-minute limit
+  requestsPerHour: BigInt!         # Per-hour limit
+  requestsPerDay: BigInt!          # Per-day limit
+  
+  # Current usage
+  usage: QuotaUsage!               # Current quota usage @derivedFrom
+  
+  # Metadata
+  lastUpdatedAt: BigInt!           # Last config change
+  updatedBy: User                  # Who updated (null if default)
+}
+
+type QuotaUsage @entity {
+  id: ID!                          # Same as user address
+  user: User!                      # Associated user
+  rateLimit: RateLimit!            # Parent rate limit
+  
+  # Current period usage
+  minuteUsage: BigInt!             # Requests this minute
+  hourUsage: BigInt!               # Requests this hour
+  dayUsage: BigInt!                # Requests today
+  
+  # Period tracking
+  currentMinute: BigInt!           # Current minute timestamp
+  currentHour: BigInt!             # Current hour timestamp
+  currentDay: BigInt!              # Current day timestamp
+  
+  # History
+  lastRequestAt: BigInt!           # Most recent request
+  totalRequests: BigInt!           # All-time total
+}
+
+# ==================== Dispute Resolution ====================
+
+type Dispute @entity {
+  id: ID!                          # disputeId
+  job: Job!                        # Related job
+  initiator: User!                 # Who started dispute
+  respondent: User!                # Other party
+  
+  # Dispute details
+  reason: String!                  # Dispute reason
+  evidenceCid: String              # IPFS CID with evidence
+  status: DisputeStatus!           # Current status
+  
+  # Resolution
+  resolver: User                   # Who resolved
+  resolution: String               # Resolution details
+  refundAmount: BigInt             # Refund if any
+  
+  # Timestamps
+  createdAt: BigInt!               # When opened
+  resolvedAt: BigInt               # When resolved
+}
+
+# ==================== Network Statistics ====================
+
+type NetworkStats @entity {
+  id: ID!                          # "singleton"
+  
+  # Job stats
+  totalJobs: BigInt!               # All-time jobs
+  pendingJobs: BigInt!             # Currently pending
+  activeJobs: BigInt!              # Currently assigned
+  completedJobs: BigInt!           # Completed successfully
+  cancelledJobs: BigInt!           # Cancelled
+  disputedJobs: BigInt!            # Ended in dispute
+  
+  # Payment stats
+  totalVolume: BigInt!             # Total ETH volume
+  totalPaidToWorkers: BigInt!      # Total worker earnings
+  averageJobValue: BigInt!         # Average payment
+  
+  # User stats
+  totalUsers: BigInt!              # Unique addresses
+  activeWorkers: BigInt!           # Workers with recent activity
+  
+  # Reputation
+  averageReputation: BigInt!       # Network average
+  
+  # Metadata
+  lastUpdatedAt: BigInt!           # Last stats update
+}
+
+# ==================== Enums ====================
+
+enum JobStatus {
+  PENDING
+  ASSIGNED
+  RUNNING
+  COMPLETED
+  CANCELLED
+  DISPUTED
+}
+
+enum PaymentStatus {
+  ESCROWED
+  RELEASED
+  DISPUTED
+  REFUNDED
+}
+
+enum DisputeStatus {
+  OPEN
+  EVIDENCE_SUBMITTED
+  UNDER_REVIEW
+  RESOLVED
+  CANCELLED
+}

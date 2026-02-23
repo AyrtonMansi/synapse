@@ -1,0 +1,190 @@
+version: '3.8'
+
+# Synapse API Gateway Cluster
+# High-availability API gateway deployment
+
+services:
+  # ========================================
+  # API Gateway Nodes
+  # ========================================
+  api-gateway-1:
+    build:
+      context: ../../synapse-backend
+      dockerfile: Dockerfile
+    container_name: synapse-api-gateway-1
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      - NODE_ENV=production
+      - API_GATEWAY_ID=gateway-1
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=${DATABASE_URL}
+      - HSK_TOKEN_ADDRESS=${HSK_TOKEN_ADDRESS}
+      - JOB_REGISTRY_ADDRESS=${JOB_REGISTRY_ADDRESS}
+      - RPC_URL=${RPC_URL}
+    networks:
+      - api-cluster
+    depends_on:
+      - redis
+      - postgres
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  api-gateway-2:
+    build:
+      context: ../../synapse-backend
+      dockerfile: Dockerfile
+    container_name: synapse-api-gateway-2
+    restart: unless-stopped
+    ports:
+      - "3002:3000"
+    environment:
+      - NODE_ENV=production
+      - API_GATEWAY_ID=gateway-2
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=${DATABASE_URL}
+      - HSK_TOKEN_ADDRESS=${HSK_TOKEN_ADDRESS}
+      - JOB_REGISTRY_ADDRESS=${JOB_REGISTRY_ADDRESS}
+      - RPC_URL=${RPC_URL}
+    networks:
+      - api-cluster
+    depends_on:
+      - redis
+      - postgres
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  api-gateway-3:
+    build:
+      context: ../../synapse-backend
+      dockerfile: Dockerfile
+    container_name: synapse-api-gateway-3
+    restart: unless-stopped
+    ports:
+      - "3003:3000"
+    environment:
+      - NODE_ENV=production
+      - API_GATEWAY_ID=gateway-3
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=${DATABASE_URL}
+      - HSK_TOKEN_ADDRESS=${HSK_TOKEN_ADDRESS}
+      - JOB_REGISTRY_ADDRESS=${JOB_REGISTRY_ADDRESS}
+      - RPC_URL=${RPC_URL}
+    networks:
+      - api-cluster
+    depends_on:
+      - redis
+      - postgres
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ========================================
+  # Load Balancer (HAProxy)
+  # ========================================
+  haproxy:
+    image: haproxy:alpine
+    container_name: synapse-haproxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8404:8404"
+    volumes:
+      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - ./haproxy/ssl:/etc/ssl/certs:ro
+    networks:
+      - api-cluster
+    depends_on:
+      - api-gateway-1
+      - api-gateway-2
+      - api-gateway-3
+
+  # ========================================
+  # Redis (Caching & Sessions)
+  # ========================================
+  redis:
+    image: redis:7-alpine
+    container_name: synapse-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - api-cluster
+    command: redis-server --appendonly yes --maxmemory 2gb --maxmemory-policy allkeys-lru
+
+  # ========================================
+  # PostgreSQL (Primary Database)
+  # ========================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: synapse-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=synapse
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d
+    networks:
+      - api-cluster
+
+  # ========================================
+  # Rate Limiter Service
+  # ========================================
+  rate-limiter:
+    image: synapse/rate-limiter:latest
+    container_name: synapse-rate-limiter
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - RATE_LIMIT_REQUESTS=1000
+      - RATE_LIMIT_WINDOW=60
+    networks:
+      - api-cluster
+    depends_on:
+      - redis
+
+volumes:
+  redis-data:
+    driver: local
+  postgres-data:
+    driver: local
+
+networks:
+  api-cluster:
+    driver: bridge

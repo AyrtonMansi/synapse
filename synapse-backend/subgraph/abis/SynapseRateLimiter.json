@@ -1,0 +1,92 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "perMinute",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "perHour",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "perDay",
+        "type": "uint256"
+      }
+    ],
+    "name": "QuotaUpdated",
+    "type": "event"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "timestamp",
+        "type": "uint256"
+      }
+    ],
+    "name": "QuotaExceeded",
+    "type": "event"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      }
+    ],
+    "name": "getRateLimit",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "perMinute",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "perHour",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "perDay",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      }
+    ],
+    "name": "checkAndUpdateRateLimit",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "allowed",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+]

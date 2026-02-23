@@ -1,0 +1,77 @@
+# Prometheus Configuration
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: synapse-network
+    replica: '{{.ExternalURL}}'
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Node metrics
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  # Container metrics
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+
+  # Synapse API Gateways
+  - job_name: 'synapse-api-gateway'
+    static_configs:
+      - targets:
+        - api-gateway-1:3000
+        - api-gateway-2:3000
+        - api-gateway-3:3000
+    metrics_path: /metrics
+    scrape_interval: 30s
+
+  # Synapse Node Software
+  - job_name: 'synapse-node'
+    static_configs:
+      - targets:
+        - node-1:9090
+        - node-2:9090
+        - node-3:9090
+    scrape_interval: 30s
+
+  # IPFS nodes
+  - job_name: 'ipfs'
+    static_configs:
+      - targets:
+        - ipfs-us-east:5001
+        - ipfs-eu-west:5001
+        - ipfs-apac:5001
+    metrics_path: /debug/metrics/prometheus
+    scrape_interval: 30s
+
+  # PostgreSQL
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres:5432']
+
+  # Redis
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+
+  # Smart Contract Events (via The Graph)
+  - job_name: 'subgraph'
+    static_configs:
+      - targets: ['subgraph-node:8040']
