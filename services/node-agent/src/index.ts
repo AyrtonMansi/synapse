@@ -1,5 +1,5 @@
 import WebSocket from 'ws';
-import { randomUUID, createHash, generateKeyPairSync, sign } from 'crypto';
+import { randomUUID, createHash, generateKeyPairSync, sign, createPrivateKey } from 'crypto';
 import { config } from 'dotenv';
 
 config();
@@ -320,7 +320,6 @@ function signReceipt(receiptData: object): string {
   // Sign receipt data with node private key
   const data = JSON.stringify(receiptData);
   // Create a temporary private key object from PEM for signing
-  const { createPrivateKey } = require('crypto');
   const privateKey = createPrivateKey(nodePrivateKeyPem);
   const signature = sign(null, Buffer.from(data), privateKey);
   return signature.toString('base64');
