@@ -9,24 +9,17 @@ const RECEIPT_VERSION = '1.0';
 
 // Node keypair for signing receipts (generate once and persist in production)
 let nodePrivateKey: KeyObject;
-let nodePublicKey: string;
+let nodePublicKeyPem: string;
 
 function initKeypair() {
-  // In production, load from persisted file. For MVP, generate on startup.
-  const existingKey = process.env.NODE_PRIVATE_KEY;
-  if (existingKey) {
-    // Would load from PEM - simplified for MVP
-    nodePublicKey = process.env.NODE_PUBLIC_KEY || 'unknown';
-  } else {
-    // Generate new keypair
-    const { publicKey, privateKey } = generateKeyPairSync('ed25519', {
-      publicKeyEncoding: { type: 'spki', format: 'pem' },
-      privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
-    });
-    nodePrivateKey = privateKey;
-    nodePublicKey = publicKey;
-    console.log('Generated new node keypair for receipt signing');
-  }
+  // Generate new keypair on each startup (MVP - in production, persist keys)
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519', {
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
+  });
+  nodePrivateKey = privateKey;
+  nodePublicKeyPem = publicKey;
+  console.log('Generated new node keypair for receipt signing');
 }
 
 initKeypair();
@@ -113,7 +106,7 @@ function registerNode() {
     concurrency: 1,
     hardware: detectHardware(),
     receiptVersion: RECEIPT_VERSION,
-    publicKey: nodePublicKey
+    publicKey: nodePublicKeyPem
   };
 
   ws.send(JSON.stringify(registerMsg));
