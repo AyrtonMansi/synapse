@@ -1,0 +1,47 @@
+groups:
+  - name: synapse_alerts
+    rules:
+      - alert: HighErrorRate
+        expr: rate(api_requests_total{status=~"5.."}[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is above 5% for 5 minutes"
+
+      - alert: NodeDropout
+        expr: rate(nodes_online[10m]) < -0.1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Nodes dropping out"
+          description: "More than 10% of nodes went offline"
+
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(inference_duration_seconds_bucket[5m])) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High inference latency"
+          description: "95th percentile latency > 5 seconds"
+
+      - alert: LowTreasuryBalance
+        expr: treasury_balance_hsk < 1000000
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low treasury balance"
+          description: "Treasury has less than 1M HSK"
+
+      - alert: ContractPaused
+        expr: contract_paused == 1
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Smart contract paused"
+          description: "A smart contract has been emergency paused"

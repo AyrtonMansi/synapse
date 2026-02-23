@@ -1,0 +1,153 @@
+specVersion: 0.0.4
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum
+    name: HSKToken
+    network: {{network}}
+    source:
+      address: "{{HSKTokenAddress}}"
+      abi: HSKToken
+      startBlock: {{startBlock}}
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.6
+      language: wasm/assemblyscript
+      entities:
+        - Transfer
+        - Approval
+        - Account
+      abis:
+        - name: HSKToken
+          file: ./abis/HSKToken.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleTransfer
+        - event: Approval(indexed address,indexed address,uint256)
+          handler: handleApproval
+        - event: VestingScheduleCreated(indexed address,uint256,uint256,uint256)
+          handler: handleVestingScheduleCreated
+        - event: TokensBurned(indexed address,uint256)
+          handler: handleTokensBurned
+      file: ./src/mappings/hskToken.ts
+
+  - kind: ethereum
+    name: JobRegistry
+    network: {{network}}
+    source:
+      address: "{{JobRegistryAddress}}"
+      abi: JobRegistry
+      startBlock: {{startBlock}}
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.6
+      language: wasm/assemblyscript
+      entities:
+        - Job
+        - Provider
+        - Client
+      abis:
+        - name: JobRegistry
+          file: ./abis/JobRegistry.json
+      eventHandlers:
+        - event: JobCreated(indexed bytes32,indexed address,uint256,uint256)
+          handler: handleJobCreated
+        - event: JobAccepted(indexed bytes32,indexed address)
+          handler: handleJobAccepted
+        - event: JobCompleted(indexed bytes32,uint256)
+          handler: handleJobCompleted
+        - event: JobDisputed(indexed bytes32,string)
+          handler: handleJobDisputed
+        - event: ProviderRegistered(indexed address,string)
+          handler: handleProviderRegistered
+        - event: ProviderReputationUpdated(indexed address,uint256,uint256)
+          handler: handleProviderReputationUpdated
+      file: ./src/mappings/jobRegistry.ts
+
+  - kind: ethereum
+    name: TreasuryDAO
+    network: {{network}}
+    source:
+      address: "{{TreasuryDAOAddress}}"
+      abi: TreasuryDAO
+      startBlock: {{startBlock}}
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.6
+      language: wasm/assemblyscript
+      entities:
+        - Proposal
+        - Vote
+        - TreasuryTransaction
+      abis:
+        - name: TreasuryDAO
+          file: ./abis/TreasuryDAO.json
+      eventHandlers:
+        - event: ProposalCreated(indexed uint256,indexed address,address[],uint256[],bytes[],string)
+          handler: handleProposalCreated
+        - event: VoteCast(indexed uint256,indexed address,uint8,uint256,string)
+          handler: handleVoteCast
+        - event: ProposalExecuted(indexed uint256)
+          handler: handleProposalExecuted
+        - event: ProposalCanceled(indexed uint256)
+          handler: handleProposalCanceled
+      file: ./src/mappings/treasuryDAO.ts
+
+  - kind: ethereum
+    name: DisputeResolver
+    network: {{network}}
+    source:
+      address: "{{DisputeResolverAddress}}"
+      abi: DisputeResolver
+      startBlock: {{startBlock}}
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.6
+      language: wasm/assemblyscript
+      entities:
+        - Dispute
+        - Arbitrator
+        - Evidence
+      abis:
+        - name: DisputeResolver
+          file: ./abis/DisputeResolver.json
+      eventHandlers:
+        - event: DisputeCreated(indexed bytes32,indexed bytes32,indexed address,address,uint256)
+          handler: handleDisputeCreated
+        - event: EvidenceSubmitted(indexed bytes32,indexed address,string)
+          handler: handleEvidenceSubmitted
+        - event: DisputeResolved(indexed bytes32,uint8,uint256)
+          handler: handleDisputeResolved
+        - event: ArbitratorRegistered(indexed address,uint256,uint256)
+          handler: handleArbitratorRegistered
+      file: ./src/mappings/disputeResolver.ts
+
+  - kind: ethereum
+    name: StreamingPayments
+    network: {{network}}
+    source:
+      address: "{{StreamingPaymentsAddress}}"
+      abi: StreamingPayments
+      startBlock: {{startBlock}}
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.6
+      language: wasm/assemblyscript
+      entities:
+        - Stream
+        - Payment
+      abis:
+        - name: StreamingPayments
+          file: ./abis/StreamingPayments.json
+      eventHandlers:
+        - event: StreamCreated(indexed bytes32,indexed address,indexed address,address,uint256,uint256,uint256)
+          handler: handleStreamCreated
+        - event: StreamCancelled(indexed bytes32,uint256)
+          handler: handleStreamCancelled
+        - event: PaymentProcessed(indexed bytes32,indexed address,uint256)
+          handler: handlePaymentProcessed
+        - event: StreamCompleted(indexed bytes32)
+          handler: handleStreamCompleted
+      file: ./src/mappings/streamingPayments.ts
+
+templates: []

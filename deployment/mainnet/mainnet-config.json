@@ -1,0 +1,100 @@
+{
+  "name": "synapse-mainnet",
+  "version": "1.0.0",
+  "description": "Synapse Mainnet Deployment Configuration",
+  "network": "mainnet",
+  "chainId": 1,
+  "rpc": {
+    "primary": "https://mainnet.infura.io/v3/${INFURA_KEY}",
+    "fallback": "https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}",
+    "mevProtection": "https://rpc.flashbots.net"
+  },
+  "contracts": {
+    "HSKToken": {
+      "name": "HSKToken",
+      "gasLimit": 3000000,
+      "verify": true,
+      "libraries": [],
+      "optimization": {
+        "runs": 200
+      }
+    },
+    "TreasuryDAO": {
+      "name": "TreasuryDAO",
+      "gasLimit": 2500000,
+      "verify": true,
+      "libraries": [],
+      "optimization": {
+        "runs": 200
+      }
+    },
+    "PriceOracle": {
+      "name": "PriceOracle",
+      "gasLimit": 1500000,
+      "verify": true,
+      "libraries": [],
+      "optimization": {
+        "runs": 1000
+      }
+    },
+    "DisputeResolver": {
+      "name": "DisputeResolver",
+      "gasLimit": 2000000,
+      "verify": true,
+      "libraries": [],
+      "optimization": {
+        "runs": 200
+      }
+    },
+    "JobRegistry": {
+      "name": "JobRegistry",
+      "gasLimit": 3000000,
+      "verify": true,
+      "libraries": [],
+      "optimization": {
+        "runs": 1000
+      }
+    },
+    "StreamingPayments": {
+      "name": "StreamingPayments",
+      "gasLimit": 2000000,
+      "verify": true,
+      "libraries": [],
+      "optimization": {
+        "runs": 1000
+      }
+    }
+  },
+  "configuration": {
+    "confirmations": 5,
+    "gasPriceStrategy": "eip1559",
+    "maxFeePerGas": "auto",
+    "maxPriorityFeePerGas": "auto",
+    "autoVerify": true,
+    "dryRunFirst": true
+  },
+  "security": {
+    "multisigRequired": true,
+    "multisigThreshold": 3,
+    "multisigSigners": 5,
+    "timelockDelay": 172800,
+    "emergencyPauseEnabled": true
+  },
+  "chainlink": {
+    "ethUsdFeed": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+    "linkToken": "0x514910771AF9Ca656af840dff83E8264EcF986CA"
+  },
+  "uniswap": {
+    "factory": "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+    "router": "0xE592427A0AEce92De3Edee1F18E0157C05861564",
+    "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88"
+  },
+  "explorers": {
+    "etherscan": "https://etherscan.io",
+    "blockscout": "https://eth.blockscout.com"
+  },
+  "subgraph": {
+    "studio": "https://api.studio.thegraph.com/query",
+    "decentralized": "https://gateway.thegraph.com/api"
+  }
+}

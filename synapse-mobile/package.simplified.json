@@ -1,0 +1,24 @@
+{
+  "name": "synapse-mobile",
+  "version": "1.0.0",
+  "description": "Synapse Network Mobile App",
+  "author": "Synapse Team",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "android": "react-native run-android",
+    "ios": "react-native run-ios",
+    "start": "react-native start",
+    "test": "jest",
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
+    "typecheck": "tsc --noEmit",
+    "pod-install": "cd ios && pod install && cd ..",
+    "clean": "cd android && ./gradlew clean && cd ..",
+    "android:release": "cd android && ./gradlew assembleRelease",
+    "ios:release": "cd ios && xcodebuild -workspace SynapseMobile.xcworkspace -scheme SynapseMobile -configuration Release"
+  },
+  "dependencies": {
+    "react": "18.2.0",
+    "react-native": "0.73.0"
+  }
+}
