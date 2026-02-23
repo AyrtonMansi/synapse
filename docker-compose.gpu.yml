@@ -1,0 +1,74 @@
+# P1.1: GPU path readiness - profiles removed for frictionless startup
+# Docker Compose overlay for GPU inference with vLLM
+# Usage: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+
+version: '3.8'
+
+services:
+  # GPU-enabled vLLM service
+  vllm:
+    image: vllm/vllm-openai:latest
+    # P1.1: Removed profiles - GPU services start by default when compose file is included
+    command: >
+      --model deepseek-ai/DeepSeek-V3
+      --tensor-parallel-size 1
+      --dtype float16
+      --max-model-len 4096
+      --api-key sk-vllm-local
+      --trust-remote-code
+    volumes:
+      - huggingface-cache:/root/.cache/huggingface
+      - vllm-keys:/app/keys  # P0 TASK 1: Key persistence volume
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+      - HF_HOME=/root/.cache/huggingface
+      - VLLM_WORKER_MULTIPROC_METHOD=spawn
+    # GPU configuration - requires nvidia-docker
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - synapse
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # vLLM node agent - registers deepseek-v3 model
+  vllm-node:
+    build: ./services/node-agent
+    # P1.1: Removed profiles - GPU services start by default when compose file is included
+    environment:
+      - ROUTER_URL=ws://router:3002/ws
+      - NODE_WALLET=${VLLM_NODE_WALLET:-0xVLLMNodeWallet456}
+      - MODEL_PROFILE=vllm
+      - NODE_ID=${VLLM_NODE_ID:-vllm-node-001}
+      - VLLM_URL=http://vllm:8000/v1
+      - GPU_INFO=${GPU_INFO:-NVIDIA-GPU}
+    volumes:
+      - vllm-keys:/app/keys  # P0 TASK 1: Persistent key storage
+    depends_on:
+      router:
+        condition: service_started
+      vllm:
+        condition: service_healthy
+    networks:
+      - synapse
+    restart: unless-stopped
+
+volumes:
+  # P0 TASK 1: Persistent storage for node identity keys
+  vllm-keys:
+    driver: local
+  huggingface-cache:
+    driver: local
+
+networks:
+  synapse:
+    driver: bridge
