@@ -41,3 +41,8 @@ postgres-data/
 *.pth
 models/
 .openclaw-fleet
+deck_audit/
+openclaw-fleet/
+MineralX_*.pptx
+build_mineralx_deck.py
+create_mineralx_deck.py
