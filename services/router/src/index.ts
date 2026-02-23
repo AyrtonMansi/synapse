@@ -94,6 +94,48 @@ let lastDate = new Date().toDateString();
 // P1.3: Track served model distribution
 const servedModelCounts: Record<string, number> = {};
 
+// PHASE 12: GPU Path Hardening - track VRAM pressure
+interface GPUPressureEvent {
+  nodeId: string;
+  timestamp: number;
+  vramPressure: boolean;
+  oomDetected: boolean;
+}
+const gpuPressureLog: GPUPressureEvent[] = [];
+
+// PHASE 18: Rate limiting
+const requestCounts = new Map<string, { count: number; resetTime: number }>();
+const RATE_LIMIT = 100; // requests per minute
+const RATE_WINDOW = 60000; // 1 minute
+
+// PHASE 11: Network Telemetry
+interface NetworkTelemetry {
+  totalTokensProcessed: number;
+  totalJobsCompleted: number;
+  fallbackCount: number;
+  nodeChurnCount: number;
+  avgQueueDepth: number;
+  peakQueueDepth: number;
+  gpuNodeCount: number;
+  cpuNodeCount: number;
+  startTime: number;
+}
+
+const telemetry: NetworkTelemetry = {
+  totalTokensProcessed: 0,
+  totalJobsCompleted: 0,
+  fallbackCount: 0,
+  nodeChurnCount: 0,
+  avgQueueDepth: 0,
+  peakQueueDepth: 0,
+  gpuNodeCount: 0,
+  cpuNodeCount: 0,
+  startTime: Date.now()
+};
+
+// Track node registrations for churn calculation
+const nodeRegistrationHistory: { id: string; timestamp: number }[] = [];
+
 // Health check
 app.get('/health', async () => ({ 
   status: 'ok', 
@@ -140,7 +182,12 @@ app.get('/stats', async () => {
   
   // PHASE 8: Get routing metrics
   const routingMetrics = getRoutingMetrics(nodeList);
-  
+
+  // PHASE 11: Calculate telemetry
+  const uptimeHours = (Date.now() - telemetry.startTime) / (1000 * 60 * 60);
+  const gpuNodes = nodeList.filter(n => n.hardware !== 'CPU-only').length;
+  const cpuNodes = nodeList.filter(n => n.hardware === 'CPU-only').length;
+
   return {
     // P1.3: Enhanced stats
     nodes_online: nodes.size,
@@ -149,10 +196,27 @@ app.get('/stats', async () => {
     avg_latency_ms: aggregateP50,
     served_model_counts: modelDistribution,
     queue_depth: pendingJobs.size,
-    
+
     // PHASE 8: Intelligent Router metrics
     routing: routingMetrics,
-    
+
+    // PHASE 11: Network Telemetry
+    telemetry: {
+      uptime_hours: Math.round(uptimeHours * 10) / 10,
+      total_tokens_processed: telemetry.totalTokensProcessed,
+      total_jobs_completed: telemetry.totalJobsCompleted,
+      fallback_rate: telemetry.totalJobsCompleted > 0
+        ? Math.round((telemetry.fallbackCount / telemetry.totalJobsCompleted) * 1000) / 10
+        : 0,
+      node_churn_count: telemetry.nodeChurnCount,
+      peak_queue_depth: telemetry.peakQueueDepth,
+      gpu_nodes: gpuNodes,
+      cpu_nodes: cpuNodes,
+      throughput_tok_per_sec: uptimeHours > 0
+        ? Math.round(telemetry.totalTokensProcessed / (uptimeHours * 3600) * 10) / 10
+        : 0
+    },
+
     // Detailed node info
     nodeDetails: nodeList.map(n => ({
       id: n.id,
@@ -191,7 +255,32 @@ app.post('/dispatch', async (request, reply) => {
     temperature?: number;
     max_tokens?: number;
   };
-  
+
+  // PHASE 18: Rate limiting check
+  const clientId = request.ip || 'unknown';
+  const now = Date.now();
+  const clientData = requestCounts.get(clientId);
+
+  if (clientData) {
+    if (now > clientData.resetTime) {
+      // Reset window
+      requestCounts.set(clientId, { count: 1, resetTime: now + RATE_WINDOW });
+    } else if (clientData.count >= RATE_LIMIT) {
+      // Rate limit exceeded
+      reply.code(429).send({
+        error: 'Rate limit exceeded',
+        retryAfter: Math.ceil((clientData.resetTime - now) / 1000)
+      });
+      return;
+    } else {
+      // Increment count
+      clientData.count++;
+    }
+  } else {
+    // New client
+    requestCounts.set(clientId, { count: 1, resetTime: now + RATE_WINDOW });
+  }
+
   const { model } = body;
   
   // PHASE 8: Intelligent Router - Find available nodes using adaptive scoring
@@ -247,13 +336,16 @@ app.post('/dispatch', async (request, reply) => {
   for (const node of availableNodes) {
     try {
       const result = await dispatchToNode(node, body);
-      
+
       // Update success stats
       node.totalJobs++;
       node.successfulJobs++;
       node.successRate = node.successfulJobs / node.totalJobs;
       node.healthScore = Math.min(1.0, node.healthScore + 0.05);
-      
+
+      // PHASE 11: Update telemetry
+      telemetry.totalJobsCompleted++;
+      telemetry.totalTokensProcessed += result.tokensIn + result.tokensOut || 0;
       // P1.3: Track served model
       const servedModel = result.served_model || model;
       servedModelCounts[servedModel] = (servedModelCounts[servedModel] || 0) + 1;
