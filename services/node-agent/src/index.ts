@@ -17,8 +17,8 @@ function initKeypair() {
     publicKeyEncoding: { type: 'spki', format: 'pem' },
     privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
   });
-  nodePrivateKey = privateKey;
-  nodePublicKeyPem = publicKey;
+  nodePrivateKey = privateKey as KeyObject;
+  nodePublicKeyPem = publicKey as string;
   console.log('Generated new node keypair for receipt signing');
 }
 
