@@ -1,14 +1,14 @@
 # Synapse MVP
 
-Decentralized AI inference network. Access DeepSeek V3, Llama, and more via API.
+Decentralized AI inference network. Access DeepSeek V3, Llama, and more via API. Run nodes, earn rewards.
 
 ## Quick Start
 
 ```bash
-# Start all services
+# 1. Start all services
 docker compose up -d
 
-# Run smoke test
+# 2. Run smoke tests
 ./scripts/smoke-test.sh
 ```
 
@@ -19,7 +19,7 @@ docker compose up -d
 | Web UI | 3000 | Minimal gateway for API key generation |
 | Gateway API | 3001 | OpenAI-compatible API endpoints |
 | Router | 3002 | WebSocket node registry & job dispatch |
-| Node Agent | - | Handles inference jobs (stub mode) |
+| Node Agent | - | Handles inference jobs (vLLM or stub) |
 
 ## API Usage
 
@@ -48,15 +48,41 @@ curl -X POST http://localhost:3001/v1/chat/completions \
 
 ## Run a Node
 
+### Quick Install (Local)
 ```bash
-# One-line installer
-curl -sSL https://synapse.sh/install | bash
+./scripts/install.sh
+```
 
-# Or manually with Docker
+### Production (GHCR Image)
+```bash
+curl -sSL https://synapse.sh/install | bash
+```
+
+### Docker Manual
+```bash
 docker run -d \
   -e ROUTER_URL=ws://host.docker.internal:3002/ws \
   -e NODE_WALLET=0xYourWalletAddress \
-  synapse-node-agent
+  -e MODEL_PROFILE=echo-stub \
+  ghcr.io/ayrtonmansi/synapse-node-agent:latest
+```
+
+### With vLLM (DeepSeek V3)
+```bash
+# Start vLLM first
+docker run -d --gpus all \
+  -p 8000:8000 \
+  vllm/vllm-openai:latest \
+  --model deepseek-ai/DeepSeek-V3
+
+# Start node agent
+docker run -d \
+  -e ROUTER_URL=ws://host.docker.internal:3002/ws \
+  -e NODE_WALLET=0xYourWalletAddress \
+  -e MODEL_PROFILE=vllm-deepseek-v3 \
+  -e VLLM_URL=http://host.docker.internal:8000 \
+  --gpus all \
+  ghcr.io/ayrtonmansi/synapse-node-agent:latest
 ```
 
 ## Architecture
@@ -68,22 +94,46 @@ docker run -d \
 └─────────────┘     └──────────────┘     └──────┬──────┘
                                                  │
                     ┌─────────────┐             │
-                    │ Node Agent  │◀────────────┘
-                    │ (Stub mode) │
+                    │  Node Agent │◀────────────┘
+                    │ (vLLM/stub) │
                     └─────────────┘
 ```
 
-## Acceptance Tests
-
-All tests must pass:
+## Acceptance Tests (via smoke-test.sh)
 
 1. ✅ `docker compose up -d` starts all services
-2. ✅ `POST /auth/api-key` returns API key
+2. ✅ `POST /auth/api-key` returns API key (email & wallet)
 3. ✅ `GET /v1/models` returns model list
 4. ✅ `POST /v1/chat/completions` returns completion
-5. ✅ Usage events persisted in SQLite
-6. ✅ Router tracks nodes via WebSocket
-7. ✅ Node agent handles jobs
-8. ✅ Minimal gateway UI at `/`
+5. ✅ `GET /stats` returns nodes/jobs/latency fields
+6. ✅ Usage events persisted in SQLite
+7. ✅ Router tracks nodes via WebSocket
+8. ✅ Parallel test: 10 concurrent requests, >=9 succeed
+9. ✅ Usage stats reflect requests
 
-Run tests: `./scripts/smoke-test.sh`
+## Router Reliability
+
+- Success rate tracking per node
+- Aggressive penalty on failure (0.5x health)
+- Rolling latency average
+- Automatic failover
+- Pending job cleanup on disconnect
+
+## Node Profiles
+
+| Profile | Description |
+|---------|-------------|
+| `echo-stub` | CPU fallback, echoes input |
+| `vllm-deepseek-v3` | GPU inference via vLLM |
+
+## Development
+
+```bash
+# Install dependencies
+cd services/gateway-api && npm install
+cd services/router && npm install
+cd services/node-agent && npm install
+
+# Run locally
+npm run dev  # in each service directory
+```
