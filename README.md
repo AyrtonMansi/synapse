@@ -4,14 +4,89 @@ Decentralized AI inference network. Access DeepSeek V3 via API. Run nodes, earn 
 
 ## Quick Start
 
+### CPU Quickstart (No GPU Required)
+
 ```bash
 # 1. Clone and start
 git clone https://github.com/AyrtonMansi/synapse.git
 cd synapse
 docker compose up -d
 
-# 2. Run smoke tests
+# 2. Verify services
 ./scripts/smoke-test.sh
+
+# 3. Open Web UI → http://localhost:3000
+#    - Generate API key
+#    - Test inference
+```
+
+### GPU Quickstart (DeepSeek V3)
+
+```bash
+# 1. Ensure NVIDIA drivers + nvidia-docker installed
+
+# 2. Start with GPU overlay
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+
+# 3. Verify GPU inference
+./scripts/smoke-test-gpu.sh
+```
+
+### Run a Node
+
+```bash
+# One-liner installer
+curl -sSL https://synapse.sh/install | bash
+
+# Or Docker
+docker run -d \
+  -e ROUTER_URL=ws://host.docker.internal:3002/ws \
+  -e NODE_WALLET=0xYourWallet \
+  -e MODEL_PROFILE=vllm \
+  ghcr.io/ayrtonmansi/synapse-node-agent:latest
+```
+
+### Test Call
+
+```bash
+# 1. Generate API key (via Web UI or curl)
+curl -X POST http://localhost:3001/auth/api-key \
+  -H "Content-Type: application/json" \
+  -d '{"email":"you@example.com"}'
+# → Returns: syn_live_xxxxxxxxxxxxxxxx_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# 2. Call inference
+curl -X POST http://localhost:3001/v1/chat/completions \
+  -H "Authorization: Bearer YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "deepseek-v3", "messages": [{"role": "user", "content": "Hello"}]}'
+
+# 3. Check served-model header
+# x-synapse-model-served: deepseek-v3 (or echo-stub if fallback)
+```
+
+### Served-Model Transparency
+
+Synapse explicitly tracks which model actually served your request:
+
+| Header | Description |
+|--------|-------------|
+| `x-synapse-model-served` | Actual model that processed the request |
+| `x-synapse-model-requested` | Model you asked for |
+| `x-synapse-fallback` | `true` if routed to fallback (echo-stub) |
+
+Response body includes:
+```json
+{
+  "model": "deepseek-v3",
+  "synapse_meta": {
+    "requested_model": "deepseek-v3",
+    "served_model": "deepseek-v3",
+    "fallback": false,
+    "node_id": "node-abc123",
+    "receipt_verified": "valid"
+  }
+}
 ```
 
 ## Services
