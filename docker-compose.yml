@@ -37,6 +37,49 @@ services:
     networks:
       - synapse
 
+  # GPU Node with vLLM - use: docker compose --profile gpu up -d
+  vllm-node:
+    build: ./services/node-agent
+    profiles:
+      - gpu
+    environment:
+      - ROUTER_URL=ws://router:3002/ws
+      - NODE_WALLET=0xVLLMNodeWallet456
+      - MODEL_PROFILE=vllm
+      - NODE_ID=vllm-node-001
+      - VLLM_URL=http://vllm:8000/v1
+    depends_on:
+      - router
+      - vllm
+    networks:
+      - synapse
+
+  vllm:
+    image: vllm/vllm-openai:latest
+    profiles:
+      - gpu
+    command: >
+      --model deepseek-ai/DeepSeek-V3
+      --tensor-parallel-size 1
+      --dtype float16
+      --max-model-len 4096
+      --api-key sk-vllm-local
+    volumes:
+      - huggingface-cache:/root/.cache/huggingface
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+      - HF_HOME=/root/.cache/huggingface
+    # Uncomment for GPU support
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    networks:
+      - synapse
+
   web-ui:
     build: ./services/web-ui
     ports:
@@ -50,6 +93,7 @@ services:
 
 volumes:
   gateway-data:
+  huggingface-cache:
 
 networks:
   synapse:
