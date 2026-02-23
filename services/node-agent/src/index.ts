@@ -1,8 +1,35 @@
 import WebSocket from 'ws';
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash, generateKeyPairSync, sign, KeyObject } from 'crypto';
 import { config } from 'dotenv';
 
 config();
+
+// Receipt schema version
+const RECEIPT_VERSION = '1.0';
+
+// Node keypair for signing receipts (generate once and persist in production)
+let nodePrivateKey: KeyObject;
+let nodePublicKey: string;
+
+function initKeypair() {
+  // In production, load from persisted file. For MVP, generate on startup.
+  const existingKey = process.env.NODE_PRIVATE_KEY;
+  if (existingKey) {
+    // Would load from PEM - simplified for MVP
+    nodePublicKey = process.env.NODE_PUBLIC_KEY || 'unknown';
+  } else {
+    // Generate new keypair
+    const { publicKey, privateKey } = generateKeyPairSync('ed25519', {
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
+    });
+    nodePrivateKey = privateKey;
+    nodePublicKey = publicKey;
+    console.log('Generated new node keypair for receipt signing');
+  }
+}
+
+initKeypair();
 
 const ROUTER_URL = process.env.ROUTER_URL || 'ws://localhost:3002/ws';
 const NODE_WALLET = process.env.NODE_WALLET || randomUUID();
@@ -64,7 +91,7 @@ async function checkVLLM(): Promise<boolean> {
 function registerNode() {
   // Determine models based on mode and availability
   let models: string[];
-  
+
   if (isVLLMMode && vllmAvailable) {
     // Only advertise deepseek-v3 when vLLM is confirmed available
     models = ['deepseek-v3'];
@@ -76,7 +103,7 @@ function registerNode() {
     // echo-stub mode - only advertise echo-stub, NEVER deepseek-v3
     models = ['echo-stub'];
   }
-  
+
   const registerMsg = {
     type: 'REGISTER',
     nodeId: NODE_ID,
@@ -84,9 +111,11 @@ function registerNode() {
     models,
     pricePer1m: 0.0015,
     concurrency: 1,
-    hardware: detectHardware()
+    hardware: detectHardware(),
+    receiptVersion: RECEIPT_VERSION,
+    publicKey: nodePublicKey
   };
-  
+
   ws.send(JSON.stringify(registerMsg));
 }
 
@@ -168,13 +197,37 @@ async function handleJob(job: Job) {
     const promptHash = hashString(promptText);
     const outputHash = hashString(result.output);
 
-    // Send receipt to router with usage details
+    // Create nonce for replay protection
+    const nonce = randomUUID();
+
+    // Build receipt for signing
+    const receipt = {
+      version: RECEIPT_VERSION,
+      jobId: job.jobId,
+      nodeId: NODE_ID,
+      model: job.model,
+      nonce,
+      ts,
+      promptHash,
+      outputHash,
+      tokensIn: result.tokensIn,
+      tokensOut: result.tokensOut,
+      tokensInReported: result.tokensInReported,
+      tokensOutReported: result.tokensOutReported,
+      usageSource: result.usageSource
+    };
+
+    // Sign the receipt
+    const signature = signReceipt(receipt);
+
+    // Send signed result to router
     ws.send(JSON.stringify({
       type: 'RESULT',
       jobId: job.jobId,
       nodeId: NODE_ID,
       model: job.model,
       output: result.output,
+      nonce,
       promptHash,
       outputHash,
       tokensIn: result.tokensIn,
@@ -183,10 +236,12 @@ async function handleJob(job: Job) {
       tokensOutReported: result.tokensOutReported,
       usageSource: result.usageSource,
       elapsedMs,
-      ts
+      ts,
+      signature,
+      receiptVersion: RECEIPT_VERSION
     }));
 
-    console.log(`Job ${job.jobId} completed in ${elapsedMs}ms (${result.usageSource} tokens)`);
+    console.log(`Job ${job.jobId} completed in ${elapsedMs}ms (${result.usageSource} tokens, signed)`);
 
   } catch (error) {
     console.error(`Job ${job.jobId} failed:`, error);
@@ -266,14 +321,15 @@ function callEchoStub(job: Job): {
 }
 
 function hashString(str: string): string {
-  // Simple hash for MVP - replace with crypto hash in production
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  return Math.abs(hash).toString(16).padStart(8, '0');
+  // SHA-256 hash for receipt integrity
+  return createHash('sha256').update(str, 'utf8').digest('hex');
+}
+
+function signReceipt(receiptData: object): string {
+  // Sign receipt data with node private key
+  const data = JSON.stringify(receiptData);
+  const signature = sign(null, Buffer.from(data), nodePrivateKey);
+  return signature.toString('base64');
 }
 
 function detectHardware(): string {
