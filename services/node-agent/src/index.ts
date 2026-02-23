@@ -22,6 +22,8 @@ function initKeypair() {
   console.log('Generated new node keypair for receipt signing');
 }
 
+initKeypair();
+
 const ROUTER_URL = process.env.ROUTER_URL || 'ws://localhost:3002/ws';
 const NODE_WALLET = process.env.NODE_WALLET || randomUUID();
 const MODEL_PROFILE = process.env.MODEL_PROFILE || 'echo-stub';
