@@ -2,7 +2,7 @@ import Fastify from 'fastify';
 import websocket from '@fastify/websocket';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
-import { randomUUID } from 'crypto';
+import { randomUUID, createPublicKey, verify } from 'crypto';
 
 const app = Fastify({ 
   logger: true,
@@ -53,6 +53,11 @@ interface Node {
   load: number;
   latency: number;
   
+  // P0 TASK 2: Store node's public key for verification
+  publicKey?: string;
+  fingerprint?: string;
+  receiptVersion?: string;
+  
   // Reliability tracking
   successRate: number;        // 0-1, rolling window
   totalJobs: number;
@@ -97,7 +102,8 @@ app.get('/stats', async () => ({
     timeouts: n.timeouts,
     lastError: n.lastError,
     load: n.load,
-    lastSeen: n.lastSeen
+    lastSeen: n.lastSeen,
+    fingerprint: n.fingerprint  // P0 TASK 1: Show fingerprint in stats
   }))
 }));
 
@@ -140,12 +146,19 @@ app.post('/dispatch', async (request, reply) => {
     });
   
   if (availableNodes.length === 0) {
-    // Fallback to echo-stub if available
+    // P0 TASK 3: Explicit fallback tracking
     const stubNode = Array.from(nodes.values())
       .find(n => n.models.includes('echo-stub') && n.healthScore > 0.1);
     
     if (stubNode) {
-      return dispatchToNode(stubNode, body);
+      console.log(`Fallback to echo-stub for model ${model} (no primary nodes available)`);
+      const result = await dispatchToNode(stubNode, body);
+      // P0 TASK 3: Mark as fallback
+      return {
+        ...result,
+        fallback: true,
+        requestedModel: model
+      };
     }
     
     reply.code(503).send({ 
@@ -166,7 +179,12 @@ app.post('/dispatch', async (request, reply) => {
       node.successRate = node.successfulJobs / node.totalJobs;
       node.healthScore = Math.min(1.0, node.healthScore + 0.05);
       
-      return result;
+      // P0 TASK 3: Include served model info
+      return {
+        ...result,
+        fallback: false,
+        requestedModel: model
+      };
     } catch (error) {
       console.error(`Node ${node.id} failed:`, error);
       
@@ -220,6 +238,60 @@ function dispatchToNode(node: Node, job: any): Promise<any> {
   });
 }
 
+/**
+ * P0 TASK 2: Verify receipt signature using node's public key
+ */
+function verifyReceipt(node: Node, data: any): { valid: boolean; reason?: string } {
+  // Backward compatibility: nodes without signatures are allowed (soft warning)
+  if (!data.signature) {
+    return { valid: true, reason: 'unsigned' };
+  }
+  
+  // If node has no public key registered, we can't verify
+  if (!node.publicKey) {
+    console.warn(`Node ${node.id} sent signed receipt but has no public key registered`);
+    return { valid: true, reason: 'no_pubkey' };
+  }
+  
+  try {
+    // Reconstruct receipt data (must match exactly what node signed)
+    const receipt = {
+      version: data.receiptVersion || '1.0',
+      jobId: data.jobId,
+      nodeId: data.nodeId,
+      model: data.model,
+      servedModel: data.servedModel,
+      nonce: data.nonce,
+      ts: data.ts,
+      promptHash: data.promptHash,
+      outputHash: data.outputHash,
+      tokensIn: data.tokensIn,
+      tokensOut: data.tokensOut,
+      tokensInReported: data.tokensInReported,
+      tokensOutReported: data.tokensOutReported,
+      usageSource: data.usageSource
+    };
+    
+    const receiptData = JSON.stringify(receipt);
+    const signature = Buffer.from(data.signature, 'base64');
+    
+    // Create public key object from PEM
+    const publicKey = createPublicKey(node.publicKey);
+    
+    // Verify signature
+    const isValid = verify(null, Buffer.from(receiptData), publicKey, signature);
+    
+    if (isValid) {
+      return { valid: true };
+    } else {
+      return { valid: false, reason: 'invalid_signature' };
+    }
+  } catch (err) {
+    console.error(`Signature verification error for node ${node.id}:`, err);
+    return { valid: false, reason: 'verification_error' };
+  }
+}
+
 // WebSocket endpoint for nodes
 app.register(async function (app) {
   app.get('/ws', { websocket: true }, (connection: any, req) => {
@@ -253,6 +325,11 @@ app.register(async function (app) {
               load: 0,
               latency: 0,
               
+              // P0 TASK 2: Store node's public key
+              publicKey: data.publicKey,
+              fingerprint: data.fingerprint,
+              receiptVersion: data.receiptVersion,
+              
               // Reliability tracking
               successRate: existingNode?.successRate || 1.0,
               totalJobs: existingNode?.totalJobs || 0,
@@ -272,7 +349,7 @@ app.register(async function (app) {
               nodeId,
               models: node.models
             }));
-            console.log(`Node registered: ${nodeId} (models: ${node.models.join(', ')})`);
+            console.log(`Node registered: ${nodeId} (models: ${node.models.join(', ')}, fingerprint: ${node.fingerprint || 'none'})`);
             break;
             
           case 'HEARTBEAT':
@@ -305,6 +382,43 @@ app.register(async function (app) {
                 node.avgLatencyMs = node.latencyHistory.reduce((a, b) => a + b, 0) / node.latencyHistory.length;
               }
               
+              // P0 TASK 2: Verify receipt signature
+              let verificationStatus = 'unsigned';
+              if (nodeId && nodes.has(nodeId)) {
+                const node = nodes.get(nodeId)!;
+                
+                if (data.signature) {
+                  const verification = verifyReceipt(node, data);
+                  
+                  if (verification.valid && !verification.reason) {
+                    verificationStatus = 'valid';
+                    console.log(`Receipt verified for job ${data.jobId} from node ${nodeId}`);
+                  } else if (verification.reason === 'unsigned' || verification.reason === 'no_pubkey') {
+                    // Backward compatibility - soft warning
+                    verificationStatus = verification.reason;
+                    if (verification.reason === 'no_pubkey') {
+                      console.warn(`Node ${nodeId} signed receipt but no pubkey registered (backward compat)`);
+                    }
+                  } else {
+                    // Invalid signature - P0 TASK 2: Reject and penalize
+                    verificationStatus = `invalid:${verification.reason}`;
+                    console.error(`INVALID RECEIPT from node ${nodeId}: ${verification.reason}`);
+                    
+                    // Apply health penalty (0.5x)
+                    node.healthScore *= 0.5;
+                    node.failedJobs++;
+                    node.totalJobs++;
+                    node.successRate = node.successfulJobs / node.totalJobs;
+                    node.lastError = `Invalid receipt signature: ${verification.reason}`;
+                    node.lastErrorAt = Date.now();
+                    
+                    // Reject the result
+                    pending.reject(new Error(`Invalid receipt signature: ${verification.reason}`));
+                    return;
+                  }
+                }
+              }
+              
               if (data.error) {
                 pending.reject(new Error(data.error));
               } else {
@@ -312,10 +426,12 @@ app.register(async function (app) {
                   content: data.output,
                   node_id: nodeId,
                   model: data.model,
+                  served_model: data.servedModel,  // P0 TASK 3: Return actual served model
                   job_id: data.jobId,
                   prompt_hash: data.promptHash,
                   output_hash: data.outputHash,
-                  ts: data.ts
+                  ts: data.ts,
+                  receipt_verified: verificationStatus  // P0 TASK 2: Include verification status
                 });
               }
             }

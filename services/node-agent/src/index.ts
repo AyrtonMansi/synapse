@@ -1,25 +1,84 @@
 import WebSocket from 'ws';
 import { randomUUID, createHash, generateKeyPairSync, sign, createPrivateKey } from 'crypto';
 import { config } from 'dotenv';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { join } from 'path';
 
 config();
 
 // Receipt schema version
 const RECEIPT_VERSION = '1.0';
 
-// Node keypair for signing receipts (generate once and persist in production)
+// Key storage paths (Docker volume mounted at /app/keys)
+const KEYS_DIR = '/app/keys';
+const PRIVATE_KEY_PATH = join(KEYS_DIR, 'node.key');
+const PUBLIC_KEY_PATH = join(KEYS_DIR, 'node.pub');
+
+// Node keypair for signing receipts (persisted to volume)
 let nodePrivateKeyPem: string;
 let nodePublicKeyPem: string;
+let nodeFingerprint: string;
 
-function initKeypair() {
-  // Generate new keypair on each startup (MVP - in production, persist keys)
+/**
+ * Initialize node keypair - load from volume or generate new
+ * P0 TASK 1: Persist node keypair to volume
+ */
+function initKeypair(): void {
+  // Ensure keys directory exists
+  if (!existsSync(KEYS_DIR)) {
+    mkdirSync(KEYS_DIR, { recursive: true });
+    console.log(`Created keys directory: ${KEYS_DIR}`);
+  }
+
+  // Try to load existing keys from volume
+  if (existsSync(PRIVATE_KEY_PATH) && existsSync(PUBLIC_KEY_PATH)) {
+    try {
+      nodePrivateKeyPem = readFileSync(PRIVATE_KEY_PATH, 'utf-8');
+      nodePublicKeyPem = readFileSync(PUBLIC_KEY_PATH, 'utf-8');
+      
+      // Generate fingerprint from public key (first 16 chars of base64 content)
+      const pubKeyBase64 = nodePublicKeyPem
+        .replace('-----BEGIN PUBLIC KEY-----', '')
+        .replace('-----END PUBLIC KEY-----', '')
+        .replace(/\s/g, '');
+      nodeFingerprint = pubKeyBase64.slice(0, 16);
+      
+      console.log('Loaded existing node keypair from volume');
+      console.log(`Node fingerprint: ${nodeFingerprint}`);
+      return;
+    } catch (err) {
+      console.error('Failed to load existing keys, generating new ones:', err);
+    }
+  }
+
+  // Generate new keypair if missing
+  console.log('Generating new ed25519 keypair...');
   const kp = generateKeyPairSync('ed25519', {
     publicKeyEncoding: { type: 'spki', format: 'pem' },
     privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
   });
+  
   nodePrivateKeyPem = kp.privateKey as unknown as string;
   nodePublicKeyPem = kp.publicKey as unknown as string;
+  
+  // Persist keys to volume
+  try {
+    writeFileSync(PRIVATE_KEY_PATH, nodePrivateKeyPem, { mode: 0o600 }); // Restrictive permissions
+    writeFileSync(PUBLIC_KEY_PATH, nodePublicKeyPem, { mode: 0o644 });
+    console.log(`Persisted keypair to ${KEYS_DIR}`);
+  } catch (err) {
+    console.error('Failed to persist keys (continuing with memory-only):', err);
+  }
+  
+  // Generate fingerprint
+  const pubKeyBase64 = nodePublicKeyPem
+    .replace('-----BEGIN PUBLIC KEY-----', '')
+    .replace('-----END PUBLIC KEY-----', '')
+    .replace(/\s/g, '');
+  nodeFingerprint = pubKeyBase64.slice(0, 16);
+  
   console.log('Generated new node keypair for receipt signing');
+  console.log(`Node fingerprint: ${nodeFingerprint}`);
 }
 
 initKeypair();
@@ -106,7 +165,8 @@ function registerNode() {
     concurrency: 1,
     hardware: detectHardware(),
     receiptVersion: RECEIPT_VERSION,
-    publicKey: nodePublicKeyPem
+    publicKey: nodePublicKeyPem,
+    fingerprint: nodeFingerprint  // P0 TASK 1: Include fingerprint in registration
   };
 
   ws.send(JSON.stringify(registerMsg));
@@ -172,14 +232,19 @@ async function handleJob(job: Job) {
       tokensOutReported?: number;
       usageSource: 'reported' | 'estimated';
     };
+    
+    // P0 TASK 3: Track actual served model
+    let servedModel: string;
 
     // Route to appropriate handler
     // Only use vLLM if: 1) vLLM mode, 2) vLLM is available, 3) job requests deepseek-v3
     if (isVLLMMode && vllmAvailable && job.model === 'deepseek-v3') {
       result = await callVLLM(job);
+      servedModel = 'deepseek-v3';
     } else {
       // Fallback to echo-stub for any other case (including router fallback)
       result = callEchoStub(job);
+      servedModel = 'echo-stub';
     }
 
     const elapsedMs = Date.now() - startTime;
@@ -199,6 +264,7 @@ async function handleJob(job: Job) {
       jobId: job.jobId,
       nodeId: NODE_ID,
       model: job.model,
+      servedModel,  // P0 TASK 3: Include actual served model in receipt
       nonce,
       ts,
       promptHash,
@@ -219,6 +285,7 @@ async function handleJob(job: Job) {
       jobId: job.jobId,
       nodeId: NODE_ID,
       model: job.model,
+      servedModel,  // P0 TASK 3: Return actual served model
       output: result.output,
       nonce,
       promptHash,
@@ -234,7 +301,7 @@ async function handleJob(job: Job) {
       receiptVersion: RECEIPT_VERSION
     }));
 
-    console.log(`Job ${job.jobId} completed in ${elapsedMs}ms (${result.usageSource} tokens, signed)`);
+    console.log(`Job ${job.jobId} completed in ${elapsedMs}ms (${result.usageSource} tokens, signed, served: ${servedModel})`);
 
   } catch (error) {
     console.error(`Job ${job.jobId} failed:`, error);
