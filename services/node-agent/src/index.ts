@@ -8,7 +8,7 @@ const ROUTER_URL = process.env.ROUTER_URL || 'ws://localhost:3002/ws';
 const NODE_WALLET = process.env.NODE_WALLET || randomUUID();
 const MODEL_PROFILE = process.env.MODEL_PROFILE || 'echo-stub';
 const NODE_ID = process.env.NODE_ID || randomUUID();
-const VLLM_URL = process.env.VLLM_URL || 'http://localhost:8000';
+const VLLM_URL = process.env.VLLM_URL || 'http://localhost:8000/v1';
 
 interface Job {
   jobId: string;
@@ -19,8 +19,15 @@ interface Job {
   max_tokens?: number;
 }
 
-// Determine execution mode
-const isVLLMMode = MODEL_PROFILE === 'vllm-deepseek-v3';
+// Profile configuration
+const PROFILE_MODELS: Record<string, string[]> = {
+  'echo-stub': ['echo-stub'],  // CPU-only fallback
+  'vllm': ['deepseek-v3'],     // GPU with vLLM
+  'vllm-deepseek-v3': ['deepseek-v3']  // Legacy name
+};
+
+const isVLLMMode = MODEL_PROFILE === 'vllm' || MODEL_PROFILE === 'vllm-deepseek-v3';
+const configuredModels = PROFILE_MODELS[MODEL_PROFILE] || ['echo-stub'];
 let vllmAvailable = false;
 
 // Connect to router
@@ -45,7 +52,9 @@ ws.on('open', () => {
 
 async function checkVLLM(): Promise<boolean> {
   try {
-    const res = await fetch(`${VLLM_URL}/health`);
+    // Try vLLM health endpoint (vLLM provides /health)
+    const healthUrl = VLLM_URL.replace('/v1', '') + '/health';
+    const res = await fetch(healthUrl);
     return res.ok;
   } catch {
     return false;
@@ -57,9 +66,15 @@ function registerNode() {
   let models: string[];
   
   if (isVLLMMode && vllmAvailable) {
-    models = ['deepseek-v3'];  // Only advertise deepseek-v3 when vLLM is ready
+    // Only advertise deepseek-v3 when vLLM is confirmed available
+    models = ['deepseek-v3'];
+  } else if (isVLLMMode && !vllmAvailable) {
+    // vLLM configured but not available - cannot serve any models
+    console.log('⚠️  vLLM mode but vLLM unavailable - not advertising deepseek-v3');
+    models = [];
   } else {
-    models = ['echo-stub'];    // Fallback to echo-stub
+    // echo-stub mode - only advertise echo-stub, NEVER deepseek-v3
+    models = ['echo-stub'];
   }
   
   const registerMsg = {
@@ -124,27 +139,36 @@ setInterval(() => {
 
 async function handleJob(job: Job) {
   console.log(`Processing job ${job.jobId} for model ${job.model}`);
-  
+
   try {
     const startTime = Date.now();
-    let result: { output: string; tokensIn: number; tokensOut: number };
-    
+    let result: {
+      output: string;
+      tokensIn: number;
+      tokensOut: number;
+      tokensInReported?: number;
+      tokensOutReported?: number;
+      usageSource: 'reported' | 'estimated';
+    };
+
     // Route to appropriate handler
     if (job.model === 'deepseek-v3' && vllmAvailable) {
       result = await callVLLM(job);
-    } else {
+    } else if (job.model === 'echo-stub') {
       result = callEchoStub(job);
+    } else {
+      throw new Error(`Model ${job.model} not available on this node`);
     }
-    
+
     const elapsedMs = Date.now() - startTime;
     const ts = Date.now();
-    
+
     // Generate receipt fields (anti-fraud)
     const promptText = job.messages.map(m => m.content).join('\n');
     const promptHash = hashString(promptText);
     const outputHash = hashString(result.output);
-    
-    // Send receipt to router
+
+    // Send receipt to router with usage details
     ws.send(JSON.stringify({
       type: 'RESULT',
       jobId: job.jobId,
@@ -155,15 +179,18 @@ async function handleJob(job: Job) {
       outputHash,
       tokensIn: result.tokensIn,
       tokensOut: result.tokensOut,
+      tokensInReported: result.tokensInReported,
+      tokensOutReported: result.tokensOutReported,
+      usageSource: result.usageSource,
       elapsedMs,
       ts
     }));
-    
-    console.log(`Job ${job.jobId} completed in ${elapsedMs}ms`);
-    
+
+    console.log(`Job ${job.jobId} completed in ${elapsedMs}ms (${result.usageSource} tokens)`);
+
   } catch (error) {
     console.error(`Job ${job.jobId} failed:`, error);
-    
+
     ws.send(JSON.stringify({
       type: 'RESULT',
       jobId: job.jobId,
@@ -172,8 +199,15 @@ async function handleJob(job: Job) {
   }
 }
 
-async function callVLLM(job: Job): Promise<{ output: string; tokensIn: number; tokensOut: number }> {
-  const response = await fetch(`${VLLM_URL}/v1/chat/completions`, {
+async function callVLLM(job: Job): Promise<{
+  output: string;
+  tokensIn: number;
+  tokensOut: number;
+  tokensInReported?: number;
+  tokensOutReported?: number;
+  usageSource: 'reported' | 'estimated';
+}> {
+  const response = await fetch(`${VLLM_URL}/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
@@ -185,26 +219,50 @@ async function callVLLM(job: Job): Promise<{ output: string; tokensIn: number; t
       max_tokens: job.max_tokens ?? 512
     })
   });
-  
+
   if (!response.ok) {
     throw new Error(`vLLM error: ${response.status} ${await response.text()}`);
   }
-  
+
   const data = await response.json();
   const output = data.choices[0]?.message?.content || '';
-  const tokensIn = data.usage?.prompt_tokens || Math.ceil(job.messages.reduce((sum, m) => sum + m.content.length, 0) / 4);
-  const tokensOut = data.usage?.completion_tokens || Math.ceil(output.length / 4);
-  
-  return { output, tokensIn, tokensOut };
+
+  // Prefer reported tokens from vLLM, fallback to estimation
+  const reportedTokensIn = data.usage?.prompt_tokens;
+  const reportedTokensOut = data.usage?.completion_tokens;
+
+  const tokensIn = reportedTokensIn ?? Math.ceil(job.messages.reduce((sum, m) => sum + m.content.length, 0) / 4);
+  const tokensOut = reportedTokensOut ?? Math.ceil(output.length / 4);
+
+  return {
+    output,
+    tokensIn,
+    tokensOut,
+    tokensInReported: reportedTokensIn,
+    tokensOutReported: reportedTokensOut,
+    usageSource: reportedTokensIn !== undefined ? 'reported' : 'estimated'
+  };
 }
 
-function callEchoStub(job: Job): { output: string; tokensIn: number; tokensOut: number } {
+function callEchoStub(job: Job): {
+  output: string;
+  tokensIn: number;
+  tokensOut: number;
+  tokensInReported?: number;
+  tokensOutReported?: number;
+  usageSource: 'reported' | 'estimated';
+} {
   const lastMessage = job.messages[job.messages.length - 1];
-  const output = `[${job.model === 'deepseek-v3' ? 'DeepSeek-V3 (stub)' : 'Echo'}] ${lastMessage.content.slice(0, 200)}${lastMessage.content.length > 200 ? '...' : ''}`;
+  const output = `[Echo] ${lastMessage.content.slice(0, 200)}${lastMessage.content.length > 200 ? '...' : ''}`;
   const tokensIn = Math.ceil(job.messages.reduce((sum, m) => sum + m.content.length, 0) / 4);
   const tokensOut = Math.ceil(output.length / 4);
-  
-  return { output, tokensIn, tokensOut };
+
+  return {
+    output,
+    tokensIn,
+    tokensOut,
+    usageSource: 'estimated'
+  };
 }
 
 function hashString(str: string): string {
