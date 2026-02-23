@@ -13,6 +13,7 @@ import {
   type CreateApiKeyInput,
   type ChatCompletionInput 
 } from './schemas.js';
+import { checkQuota, wouldExceedQuota, getQuotaHeaders } from './quota.js';
 
 const app = Fastify({
   logger: true,
@@ -80,12 +81,27 @@ app.addHook('onRequest', async (request, reply) => {
   }
   
   const apiKey = await validateApiKey(key);
-  
+
   if (!apiKey) {
     reply.code(401).send({ error: 'Invalid API key' });
     return;
   }
-  
+
+  // Check quota status
+  const quota = checkQuota(apiKey.id);
+  if (quota.quotaExceeded) {
+    reply.code(429).send({
+      error: 'Quota exceeded',
+      message: 'Daily token or cost limit reached',
+      quota: {
+        tokensUsed: quota.tokensUsed,
+        tokensRemaining: quota.tokensRemaining,
+        resetAt: new Date(quota.resetTime).toISOString()
+      }
+    });
+    return;
+  }
+
   // Attach key info to request
   request.apiKey = apiKey;
 });
@@ -197,13 +213,33 @@ app.post('/v1/chat/completions', async (request, reply) => {
   }
   
   const { model, messages } = body;
-  
+
   // Check if model exists
   if (!MODELS.find(m => m.id === model)) {
     reply.code(400).send({ error: 'Model not found' });
     return;
   }
-  
+
+  // PHASE B: Quota check before processing
+  const estimatedTokens = messages.reduce((sum, m) => sum + Math.ceil(m.content.length / 4), 0) + (body.max_tokens || 100);
+  if (request.apiKey) {
+    const quotaCheck = wouldExceedQuota(request.apiKey.id, estimatedTokens);
+    if (!quotaCheck.allowed) {
+      reply.code(429)
+        .headers(getQuotaHeaders(quotaCheck.quota))
+        .send({
+          error: 'Quota exceeded',
+          message: quotaCheck.reason,
+          quota: {
+            tokensUsed: quotaCheck.quota.tokensUsed,
+            tokensRemaining: quotaCheck.quota.tokensRemaining,
+            resetAt: new Date(quotaCheck.quota.resetTime).toISOString()
+          }
+        });
+      return;
+    }
+  }
+
   try {
     // Dispatch to router/node
     const result = await dispatchJob({
@@ -260,7 +296,16 @@ app.post('/v1/chat/completions', async (request, reply) => {
     if (isFallback) {
       reply.header('x-synapse-fallback', 'true');
     }
-    
+
+    // PHASE B: Add quota headers
+    if (request.apiKey) {
+      const quota = checkQuota(request.apiKey.id);
+      const quotaHeaders = getQuotaHeaders(quota);
+      for (const [key, value] of Object.entries(quotaHeaders)) {
+        reply.header(key, value);
+      }
+    }
+
     // Return OpenAI-compatible response
     // P0 TASK 3: Include served model info in response body
     return {
