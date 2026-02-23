@@ -9,7 +9,9 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [stats, setStats] = useState({ nodes_online: 0, jobs_today: 0 });
-  const [activeTab, setActiveTab] = useState<'gateway' | 'node'>('gateway');
+  const [activeTab, setActiveTab] = useState<'gateway' | 'node' | 'test'>('gateway');
+  const [testResult, setTestResult] = useState<{servedModel?: string, responseText?: string, error?: string} | null>(null);
+  const [testLoading, setTestLoading] = useState(false);
 
   useEffect(() => {
     fetchStats();
@@ -90,6 +92,14 @@ function App() {
           >
             Run a Node
           </button>
+          <button
+            onClick={() => setActiveTab('test')}
+            className={`flex-1 py-2 text-sm rounded-md transition-colors ${
+              activeTab === 'test' ? 'bg-gray-800 text-white' : 'text-gray-500 hover:text-gray-300'
+            }`}
+          >
+            Test
+          </button>
         </div>
 
         {activeTab === 'gateway' ? (
@@ -154,6 +164,75 @@ function App() {
               <div>• Connects to router at {API_URL.replace(':3001', ':3002')}</div>
               <div>• Starts earning on job completion</div>
             </div>
+          </div>
+        )}
+
+        {activeTab === 'test' && (
+          <div className="bg-gray-900 rounded-xl p-6 border border-gray-800">
+            <div className="text-sm text-gray-400 mb-4">
+              Test inference and verify served model
+            </div>
+            
+            <button
+              onClick={async () => {
+                if (!apiKey) {
+                  setTestResult({ error: 'Generate API key first' });
+                  return;
+                }
+                setTestLoading(true);
+                try {
+                  const res = await fetch(`${API_URL}/v1/chat/completions`, {
+                    method: 'POST',
+                    headers: { 
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${apiKey}`
+                    },
+                    body: JSON.stringify({
+                      model: 'deepseek-v3',
+                      messages: [{ role: 'user', content: 'Say hello' }],
+                      max_tokens: 50
+                    })
+                  });
+                  const servedModel = res.headers.get('x-synapse-model-served') || 'unknown';
+                  const data = await res.json();
+                  setTestResult({
+                    servedModel,
+                    responseText: data.choices?.[0]?.message?.content || JSON.stringify(data)
+                  });
+                } catch (e) {
+                  setTestResult({ error: String(e) });
+                } finally {
+                  setTestLoading(false);
+                }
+              }}
+              disabled={testLoading}
+              className="w-full bg-white text-black font-medium py-3 rounded-lg hover:bg-gray-200 disabled:opacity-50 transition-colors"
+            >
+              {testLoading ? 'Testing...' : 'Test Completion'}
+            </button>
+
+            {testResult?.error && (
+              <div className="mt-4 p-3 bg-red-900/30 border border-red-800 rounded-lg text-red-400 text-sm">
+                {testResult.error}
+              </div>
+            )}
+
+            {testResult?.servedModel && (
+              <div className="mt-4 space-y-3">
+                <div className="p-3 bg-gray-950 rounded-lg">
+                  <div className="text-xs text-gray-500 mb-1">Served Model (from header)</div>
+                  <div className={`font-mono text-sm ${testResult.servedModel === 'deepseek-v3' ? 'text-green-400' : 'text-yellow-400'}`}>
+                    {testResult.servedModel}
+                  </div>
+                </div>
+                <div className="p-3 bg-gray-950 rounded-lg">
+                  <div className="text-xs text-gray-500 mb-1">Response Preview</div>
+                  <div className="text-sm text-gray-300 line-clamp-3">
+                    {testResult.responseText}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
