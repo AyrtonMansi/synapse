@@ -313,10 +313,13 @@ app.post('/dispatch', async (request, reply) => {
     if (stubNode) {
       console.log(`Fallback to echo-stub for model ${model} (no primary nodes available)`);
       const result = await dispatchToNode(stubNode, body);
-      
+
       // P1.3: Track served model
       servedModelCounts['echo-stub'] = (servedModelCounts['echo-stub'] || 0) + 1;
-      
+
+      // PHASE 11: Track fallback
+      telemetry.fallbackCount++;
+
       // P1.3: Mark as fallback
       return {
         ...result,
@@ -346,6 +349,11 @@ app.post('/dispatch', async (request, reply) => {
       // PHASE 11: Update telemetry
       telemetry.totalJobsCompleted++;
       telemetry.totalTokensProcessed += result.tokensIn + result.tokensOut || 0;
+
+      // PHASE 11: Track peak queue depth
+      if (pendingJobs.size > telemetry.peakQueueDepth) {
+        telemetry.peakQueueDepth = pendingJobs.size;
+      }
       // P1.3: Track served model
       const servedModel = result.served_model || model;
       servedModelCounts[servedModel] = (servedModelCounts[servedModel] || 0) + 1;
@@ -485,7 +493,19 @@ app.register(async function (app) {
             
             // Check if node re-registering (preserve stats)
             const existingNode = nodes.get(nodeId);
-            
+
+            // PHASE 11: Track node churn (new node or re-register after >5 min)
+            const isNewNode = !existingNode;
+            const isReRegister = existingNode && (now - existingNode.lastSeen > 300000);
+            if (isNewNode || isReRegister) {
+              telemetry.nodeChurnCount++;
+              nodeRegistrationHistory.push({ id: nodeId, timestamp: now });
+              // Keep only last 1000 registrations
+              if (nodeRegistrationHistory.length > 1000) {
+                nodeRegistrationHistory.shift();
+              }
+            }
+
             const node: Node = {
               id: nodeId,
               wallet: data.wallet,
