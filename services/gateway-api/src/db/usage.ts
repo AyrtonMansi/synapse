@@ -98,3 +98,17 @@ export function getJobsToday(): number {
   const result = stmt.get(startTimestamp) as { count: number };
   return result.count;
 }
+
+export function getTokensToday(): number {
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const startTimestamp = startOfDay.getTime();
+  
+  const stmt = db.prepare(`
+    SELECT COALESCE(SUM(tokens_in + tokens_out), 0) as tokens
+    FROM usage_events
+    WHERE created_at >= ? AND status = 'success'
+  `);
+  const result = stmt.get(startTimestamp) as { tokens: number };
+  return result.tokens;
+}

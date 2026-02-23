@@ -68,16 +68,19 @@ app.get('/stats', async () => {
     const routerStats = routerRes.ok ? await routerRes.json() : { nodes: 0 };
     
     // Fetch local usage stats
-    const { getUsageStats, getJobsToday } = await import('./db/usage.js');
+    const { getUsageStats, getJobsToday, getTokensToday } = await import('./db/usage.js');
     const usageStats = getUsageStats();
+    const jobsToday = getJobsToday();
+    const tokensToday = getTokensToday();
     
     cachedStats = {
-      nodes: routerStats.nodes || 0,
-      jobs_today: getJobsToday(),
-      total_jobs: usageStats.total_jobs,
-      avg_latency_ms: Math.round(usageStats.avg_latency),
-      total_tokens: usageStats.total_tokens,
-      updated_at: now
+      nodes_online: routerStats.nodes || 0,
+      jobs_today: jobsToday,
+      jobs_total: usageStats.total_jobs,
+      avg_latency_ms: Math.round(usageStats.avg_latency) || 0,
+      tokens_today: tokensToday,
+      tokens_total: usageStats.total_tokens,
+      updated_at: new Date(now).toISOString()
     };
     
     statsCacheTime = now;
@@ -85,12 +88,13 @@ app.get('/stats', async () => {
   } catch (error) {
     // Return cached or fallback
     return cachedStats || {
-      nodes: 0,
+      nodes_online: 0,
       jobs_today: 0,
-      total_jobs: 0,
+      jobs_total: 0,
       avg_latency_ms: 0,
-      total_tokens: 0,
-      updated_at: now
+      tokens_today: 0,
+      tokens_total: 0,
+      updated_at: new Date(now).toISOString()
     };
   }
 });

@@ -8,7 +8,7 @@ function App() {
   const [apiKey, setApiKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [stats, setStats] = useState({ nodes: 0, jobs: 0 });
+  const [stats, setStats] = useState({ nodes_online: 0, jobs_today: 0 });
   const [activeTab, setActiveTab] = useState<'gateway' | 'node'>('gateway');
 
   useEffect(() => {
@@ -22,7 +22,10 @@ function App() {
       const res = await fetch(`${API_URL}/stats`);
       if (res.ok) {
         const data = await res.json();
-        setStats({ nodes: data.nodes || 0, jobs: data.jobs_today || 0 });
+        setStats({ 
+          nodes_online: data.nodes_online || 0, 
+          jobs_today: data.jobs_today || 0 
+        });
       }
     } catch {
       // ignore
@@ -156,8 +159,8 @@ function App() {
 
         {/* Stats */}
         <div className="mt-6 flex justify-center gap-6 text-xs text-gray-500">
-          <span>Nodes online: <span className="text-white">{stats.nodes}</span></span>
-          <span>Jobs today: <span className="text-white">{stats.jobs}</span></span>
+          <span>Nodes online: <span className="text-white">{stats.nodes_online}</span></span>
+          <span>Jobs today: <span className="text-white">{stats.jobs_today}</span></span>
         </div>
       </div>
     </div>
