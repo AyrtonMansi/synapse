@@ -68,9 +68,14 @@ app.addHook('onRequest', async (request, reply) => {
   
   const key = authHeader.slice(7);
   
-  // Validate key format before DB lookup
-  if (!key.startsWith('syn_') || key.length < 20) {
-    reply.code(401).send({ error: 'Invalid API key format' });
+  // P1.2: Validate new key format before DB lookup
+  // Format: syn_live_<16-char-keyId>_<32-char-secret>
+  const keyRegex = /^syn_live_[a-zA-Z0-9]{16}_[a-zA-Z0-9]{32}$/;
+  if (!keyRegex.test(key)) {
+    reply.code(401).send({ 
+      error: 'Invalid API key format',
+      expected: 'syn_live_<16-char-keyId>_<32-char-secret>'
+    });
     return;
   }
   
@@ -207,6 +212,10 @@ app.post('/v1/chat/completions', async (request, reply) => {
     
     const latencyMs = Date.now() - startTime;
     
+    // P0 TASK 3: Determine actual served model (fallback detection)
+    const servedModel = result.served_model || result.model || model;
+    const isFallback = result.fallback === true || servedModel === 'echo-stub' && model !== 'echo-stub';
+    
     // Estimate tokens (simple heuristic for MVP)
     const tokensIn = messages.reduce((sum, m) => sum + Math.ceil(m.content.length / 4), 0);
     const tokensOut = Math.ceil(result.content.length / 4);
@@ -218,7 +227,12 @@ app.post('/v1/chat/completions', async (request, reply) => {
         job_id: result.job_id,
         prompt_hash: result.prompt_hash,
         output_hash: result.output_hash,
-        ts: result.ts
+        ts: result.ts,
+        // P0 TASK 2: Store verification status
+        receipt_verified: result.receipt_verified || 'unsigned',
+        // P0 TASK 3: Store fallback info
+        served_model: servedModel,
+        is_fallback: isFallback
       });
       
       createUsageEvent({
@@ -229,19 +243,27 @@ app.post('/v1/chat/completions', async (request, reply) => {
         tokens_out: tokensOut,
         latency_ms: latencyMs,
         cost_estimate: costEstimate,
-        status: 'success',
+        status: isFallback ? 'fallback' : 'success',
         prompt_hash: result.prompt_hash,
         output_hash: result.output_hash,
         receipt_json: receiptJson
       });
     }
     
+    // P0 TASK 3: Add header for served model transparency
+    reply.header('x-synapse-model-served', servedModel);
+    reply.header('x-synapse-model-requested', model);
+    if (isFallback) {
+      reply.header('x-synapse-fallback', 'true');
+    }
+    
     // Return OpenAI-compatible response
+    // P0 TASK 3: Include served model info in response body
     return {
       id: `chatcmpl-${randomUUID()}`,
       object: 'chat.completion',
       created: Math.floor(Date.now() / 1000),
-      model,
+      model: servedModel,  // Return actual served model, not requested
       choices: [{
         index: 0,
         message: {
@@ -254,6 +276,14 @@ app.post('/v1/chat/completions', async (request, reply) => {
         prompt_tokens: tokensIn,
         completion_tokens: tokensOut,
         total_tokens: tokensIn + tokensOut
+      },
+      // P0 TASK 3: Additional transparency fields
+      synapse_meta: {
+        requested_model: model,
+        served_model: servedModel,
+        fallback: isFallback,
+        node_id: result.node_id,
+        receipt_verified: result.receipt_verified || 'unsigned'
       }
     };
     
@@ -292,6 +322,62 @@ app.get('/usage', async (request) => {
     by_key: getUsageByKey(request.apiKey.id),
     stats: getUsageStats()
   };
+});
+
+// P1.4: Yield estimate endpoint for miners
+// Formula: tok/s × utilisation × 86400 × (rate_per_1m/1e6)
+app.get('/yield-estimate', async () => {
+  try {
+    // Fetch router stats with node details
+    const ROUTER_URL = process.env.ROUTER_URL || 'http://localhost:3002';
+    const routerRes = await fetch(`${ROUTER_URL}/stats`);
+    
+    if (!routerRes.ok) {
+      return { error: 'Router unavailable' };
+    }
+    
+    const routerStats = await routerRes.json();
+    const nodeDetails = routerStats.nodeDetails || [];
+    
+    // Calculate yield estimates for each node
+    const estimates = nodeDetails.map((node: any) => {
+      const tokPerSec = node.tok_per_sec || 0;
+      const utilization = (node.utilization || 0) / 100; // Convert percentage to decimal
+      const ratePer1M = node.pricePer1m || 0.0015;
+      const jobsPerHour = node.jobs_per_hour || 0;
+      
+      // Formula: tok/s × utilisation × 86400 seconds/day × (rate_per_1m/1e6 tokens)
+      const dailyTokens = tokPerSec * utilization * 86400;
+      const dailyRevenue = dailyTokens * (ratePer1M / 1e6);
+      
+      return {
+        fingerprint: node.fingerprint || 'unknown',
+        model: node.models?.[0] || 'unknown',
+        hardware: node.hardware || 'unknown',
+        tok_per_sec: tokPerSec,
+        utilization_percent: node.utilization || 0,
+        jobs_per_hour: jobsPerHour,
+        rate_per_1m_tokens: ratePer1M,
+        // P1.4: Revenue band estimate (label as "estimate")
+        estimated_revenue_per_day: {
+          low: Math.round(dailyRevenue * 0.7 * 100) / 100,   // -30%
+          expected: Math.round(dailyRevenue * 100) / 100,     // baseline
+          high: Math.round(dailyRevenue * 1.3 * 100) / 100    // +30%
+        },
+        health_score: node.healthScore,
+        success_rate: node.successRate
+      };
+    });
+    
+    return {
+      nodes_online: routerStats.nodes_online || 0,
+      estimates,
+      updated_at: new Date().toISOString()
+    };
+  } catch (error) {
+    console.error('Yield estimate error:', error);
+    return { error: 'Failed to calculate estimates' };
+  }
 });
 
 const PORT = parseInt(process.env.PORT || '3001');

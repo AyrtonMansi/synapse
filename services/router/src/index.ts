@@ -58,6 +58,12 @@ interface Node {
   fingerprint?: string;
   receiptVersion?: string;
   
+  // P1.3: Benchmark and telemetry data
+  tok_per_sec?: number;
+  utilization?: number;  // percentage (0-100)
+  jobs_completed?: number;
+  jobs_per_hour?: number;
+  
   // Reliability tracking
   successRate: number;        // 0-1, rolling window
   totalJobs: number;
@@ -67,7 +73,7 @@ interface Node {
   lastError?: string;
   lastErrorAt?: number;
   avgLatencyMs: number;       // Rolling average
-  latencyHistory: number[];   // Last 10 latencies
+  latencyHistory: number[];   // Last 50 latencies for p50 calculation
 }
 
 const nodes = new Map<string, Node>();
@@ -77,7 +83,14 @@ const pendingJobs = new Map<string, {
   timeout: any;
   nodeId?: string;
   startedAt: number;
-}>();
+} >();
+
+// P1.3: Track daily stats
+let jobsToday = 0;
+let lastDate = new Date().toDateString();
+
+// P1.3: Track served model distribution
+const servedModelCounts: Record<string, number> = {};
 
 // Health check
 app.get('/health', async () => ({ 
@@ -86,26 +99,77 @@ app.get('/health', async () => ({
   nodes: nodes.size 
 }));
 
-// Get node stats with reliability metrics
-app.get('/stats', async () => ({
-  nodes: nodes.size,
-  nodeDetails: Array.from(nodes.values()).map(n => ({
-    id: n.id,
-    models: n.models,
-    pricePer1m: n.pricePer1m,
-    healthScore: Math.round(n.healthScore * 100) / 100,
-    successRate: Math.round(n.successRate * 100) / 100,
-    avgLatencyMs: Math.round(n.avgLatencyMs),
-    totalJobs: n.totalJobs,
-    successfulJobs: n.successfulJobs,
-    failedJobs: n.failedJobs,
-    timeouts: n.timeouts,
-    lastError: n.lastError,
-    load: n.load,
-    lastSeen: n.lastSeen,
-    fingerprint: n.fingerprint  // P0 TASK 1: Show fingerprint in stats
-  }))
-}));
+// P1.3: Calculate p50 latency from history
+function calculateP50(latencies: number[]): number {
+  if (latencies.length === 0) return 0;
+  const sorted = [...latencies].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? Math.round((sorted[mid - 1] + sorted[mid]) / 2)
+    : sorted[mid];
+}
+
+// P1.3: Get enhanced stats with utilization, model distribution, queue depth
+app.get('/stats', async () => {
+  // Reset daily counter if date changed
+  const today = new Date().toDateString();
+  if (today !== lastDate) {
+    jobsToday = 0;
+    lastDate = today;
+    // Reset model counts
+    Object.keys(servedModelCounts).forEach(k => delete servedModelCounts[k]);
+  }
+  
+  const nodeList = Array.from(nodes.values());
+  
+  // Calculate aggregate stats
+  const totalJobs = nodeList.reduce((sum, n) => sum + n.totalJobs, 0);
+  const avgSuccessRate = nodeList.length > 0
+    ? nodeList.reduce((sum, n) => sum + n.successRate, 0) / nodeList.length
+    : 0;
+  
+  // Collect all latencies for aggregate p50
+  const allLatencies: number[] = [];
+  nodeList.forEach(n => allLatencies.push(...n.latencyHistory));
+  const aggregateP50 = calculateP50(allLatencies);
+  
+  // P1.3: Build served model distribution
+  const modelDistribution: Record<string, number> = { ...servedModelCounts };
+  
+  return {
+    // P1.3: Enhanced stats
+    nodes_online: nodes.size,
+    jobs_today: jobsToday,
+    jobs_total: totalJobs,
+    avg_latency_ms: aggregateP50,
+    served_model_counts: modelDistribution,
+    queue_depth: pendingJobs.size,
+    
+    // Detailed node info
+    nodeDetails: nodeList.map(n => ({
+      id: n.id,
+      models: n.models,
+      pricePer1m: n.pricePer1m,
+      healthScore: Math.round(n.healthScore * 100) / 100,
+      successRate: Math.round(n.successRate * 100) / 100,
+      avgLatencyMs: Math.round(n.avgLatencyMs),
+      p50LatencyMs: calculateP50(n.latencyHistory),
+      totalJobs: n.totalJobs,
+      successfulJobs: n.successfulJobs,
+      failedJobs: n.failedJobs,
+      timeouts: n.timeouts,
+      lastError: n.lastError,
+      load: n.load,
+      lastSeen: n.lastSeen,
+      fingerprint: n.fingerprint,
+      // P1.3: Telemetry fields
+      tok_per_sec: n.tok_per_sec || 0,
+      utilization: n.utilization || 0,
+      jobs_per_hour: n.jobs_per_hour || 0,
+      hardware: n.hardware
+    }))
+  };
+});
 
 // Job dispatch endpoint (called by gateway)
 app.post('/dispatch', async (request, reply) => {
@@ -153,7 +217,11 @@ app.post('/dispatch', async (request, reply) => {
     if (stubNode) {
       console.log(`Fallback to echo-stub for model ${model} (no primary nodes available)`);
       const result = await dispatchToNode(stubNode, body);
-      // P0 TASK 3: Mark as fallback
+      
+      // P1.3: Track served model
+      servedModelCounts['echo-stub'] = (servedModelCounts['echo-stub'] || 0) + 1;
+      
+      // P1.3: Mark as fallback
       return {
         ...result,
         fallback: true,
@@ -178,6 +246,13 @@ app.post('/dispatch', async (request, reply) => {
       node.successfulJobs++;
       node.successRate = node.successfulJobs / node.totalJobs;
       node.healthScore = Math.min(1.0, node.healthScore + 0.05);
+      
+      // P1.3: Track served model
+      const servedModel = result.served_model || model;
+      servedModelCounts[servedModel] = (servedModelCounts[servedModel] || 0) + 1;
+      
+      // P1.3: Increment jobs today
+      jobsToday++;
       
       // P0 TASK 3: Include served model info
       return {
@@ -330,6 +405,10 @@ app.register(async function (app) {
               fingerprint: data.fingerprint,
               receiptVersion: data.receiptVersion,
               
+              // P1.3: Store benchmark data from registration
+              tok_per_sec: data.benchmark?.tok_per_sec,
+              hardware: data.benchmark?.hardware || data.hardware || 'unknown',
+              
               // Reliability tracking
               successRate: existingNode?.successRate || 1.0,
               totalJobs: existingNode?.totalJobs || 0,
@@ -349,7 +428,7 @@ app.register(async function (app) {
               nodeId,
               models: node.models
             }));
-            console.log(`Node registered: ${nodeId} (models: ${node.models.join(', ')}, fingerprint: ${node.fingerprint || 'none'})`);
+            console.log(`Node registered: ${nodeId} (models: ${node.models.join(', ')}, fingerprint: ${node.fingerprint || 'none'}, tok/sec: ${node.tok_per_sec || 'N/A'})`);
             break;
             
           case 'HEARTBEAT':
@@ -358,6 +437,20 @@ app.register(async function (app) {
               node.lastSeen = Date.now();
               node.load = data.load || 0;
               node.latency = data.latency || 0;
+              
+              // P1.3: Store telemetry from heartbeat
+              if (data.tok_per_sec !== undefined) {
+                node.tok_per_sec = data.tok_per_sec;
+              }
+              if (data.utilization !== undefined) {
+                node.utilization = data.utilization;
+              }
+              if (data.jobs_per_hour !== undefined) {
+                node.jobs_per_hour = data.jobs_per_hour;
+              }
+              if (data.jobs_completed !== undefined) {
+                node.jobs_completed = data.jobs_completed;
+              }
               
               // Gradual health recovery on heartbeat
               if (node.healthScore < 1.0) {
@@ -376,9 +469,11 @@ app.register(async function (app) {
               if (nodeId && nodes.has(nodeId) && data.elapsedMs) {
                 const node = nodes.get(nodeId)!;
                 node.latencyHistory.push(data.elapsedMs);
-                if (node.latencyHistory.length > 10) {
+                // Keep last 50 latencies for p50 calculation
+                if (node.latencyHistory.length > 50) {
                   node.latencyHistory.shift();
                 }
+                // Update rolling average
                 node.avgLatencyMs = node.latencyHistory.reduce((a, b) => a + b, 0) / node.latencyHistory.length;
               }
               

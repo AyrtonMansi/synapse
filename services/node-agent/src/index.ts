@@ -19,6 +19,15 @@ let nodePrivateKeyPem: string;
 let nodePublicKeyPem: string;
 let nodeFingerprint: string;
 
+// P1.3: Benchmark results
+interface BenchmarkResult {
+  tok_per_sec: number;
+  model: string;
+  hardware: string;
+  completed: boolean;
+}
+let benchmarkResult: BenchmarkResult | null = null;
+
 /**
  * Initialize node keypair - load from volume or generate new
  * P0 TASK 1: Persist node keypair to volume
@@ -88,6 +97,7 @@ const NODE_WALLET = process.env.NODE_WALLET || randomUUID();
 const MODEL_PROFILE = process.env.MODEL_PROFILE || 'echo-stub';
 const NODE_ID = process.env.NODE_ID || randomUUID();
 const VLLM_URL = process.env.VLLM_URL || 'http://localhost:8000/v1';
+const PAYOUT_RATE_PER_1M = parseFloat(process.env.PAYOUT_RATE_PER_1M || '0.0015');
 
 interface Job {
   jobId: string;
@@ -109,24 +119,122 @@ const isVLLMMode = MODEL_PROFILE === 'vllm' || MODEL_PROFILE === 'vllm-deepseek-
 const configuredModels = PROFILE_MODELS[MODEL_PROFILE] || ['echo-stub'];
 let vllmAvailable = false;
 
+// P1.3: Track node utilization metrics
+let busyMsTotal = 0;
+let wallMsStart = Date.now();
+let currentJobStartMs: number | null = null;
+let jobsCompleted = 0;
+
+/**
+ * P1.3: Run benchmark at startup
+ * - Warmup: 1 inference
+ * - Run: 5 inferences
+ * - Compute tokens/sec from output
+ */
+async function runBenchmark(): Promise<BenchmarkResult> {
+  console.log('P1.3: Starting benchmark...');
+  
+  const hardware = detectHardware();
+  const model = isVLLMMode ? 'deepseek-v3' : 'echo-stub';
+  
+  // Skip benchmark for echo-stub (not meaningful)
+  if (!isVLLMMode || !vllmAvailable) {
+    console.log('P1.3: Skipping benchmark (echo-stub mode)');
+    return {
+      tok_per_sec: 0,
+      model,
+      hardware,
+      completed: false
+    };
+  }
+  
+  const benchmarkPrompt = 'Explain quantum computing in simple terms.';
+  let totalTokens = 0;
+  let totalMs = 0;
+  
+  try {
+    // Warmup: 1 inference
+    console.log('P1.3: Warmup inference...');
+    await runInference(benchmarkPrompt, 100);
+    await new Promise(r => setTimeout(r, 100)); // Brief pause
+    
+    // Run: 5 inferences
+    console.log('P1.3: Running 5 benchmark inferences...');
+    for (let i = 0; i < 5; i++) {
+      const start = Date.now();
+      const result = await runInference(benchmarkPrompt, 100);
+      const elapsed = Date.now() - start;
+      
+      // Estimate tokens from output
+      const outputTokens = Math.ceil(result.length / 4);
+      totalTokens += outputTokens;
+      totalMs += elapsed;
+      
+      console.log(`P1.3: Run ${i + 1}/5: ${outputTokens} tokens in ${elapsed}ms`);
+    }
+    
+    const tokPerSec = totalTokens / (totalMs / 1000);
+    console.log(`P1.3: Benchmark complete - ${tokPerSec.toFixed(2)} tok/sec`);
+    
+    return {
+      tok_per_sec: Math.round(tokPerSec * 100) / 100,
+      model,
+      hardware,
+      completed: true
+    };
+  } catch (err) {
+    console.error('P1.3: Benchmark failed:', err);
+    return {
+      tok_per_sec: 0,
+      model,
+      hardware,
+      completed: false
+    };
+  }
+}
+
+/**
+ * P1.3: Helper to run a single inference for benchmarking
+ */
+async function runInference(prompt: string, maxTokens: number): Promise<string> {
+  const response = await fetch(`${VLLM_URL}/chat/completions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'deepseek-ai/DeepSeek-V3',
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.7,
+      max_tokens: maxTokens
+    })
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Inference failed: ${response.status}`);
+  }
+  
+  const data = await response.json();
+  return data.choices[0]?.message?.content || '';
+}
+
 // Connect to router
 const ws = new WebSocket(ROUTER_URL);
 
-ws.on('open', () => {
+ws.on('open', async () => {
   console.log('Connected to router');
   
   // Check vLLM availability if in vLLM mode
   if (isVLLMMode) {
-    checkVLLM().then(available => {
-      vllmAvailable = available;
-      if (!available) {
-        console.log('⚠️  vLLM not available, falling back to echo-stub');
-      }
-      registerNode();
-    });
-  } else {
-    registerNode();
+    const available = await checkVLLM();
+    vllmAvailable = available;
+    if (!available) {
+      console.log('⚠️  vLLM not available, falling back to echo-stub');
+    }
   }
+  
+  // P1.3: Run benchmark before registering
+  benchmarkResult = await runBenchmark();
+  
+  registerNode();
 });
 
 async function checkVLLM(): Promise<boolean> {
@@ -161,12 +269,14 @@ function registerNode() {
     nodeId: NODE_ID,
     wallet: NODE_WALLET,
     models,
-    pricePer1m: 0.0015,
+    pricePer1m: PAYOUT_RATE_PER_1M,
     concurrency: 1,
     hardware: detectHardware(),
     receiptVersion: RECEIPT_VERSION,
     publicKey: nodePublicKeyPem,
-    fingerprint: nodeFingerprint  // P0 TASK 1: Include fingerprint in registration
+    fingerprint: nodeFingerprint,
+    // P1.3: Include benchmark results in registration
+    benchmark: benchmarkResult
   };
 
   ws.send(JSON.stringify(registerMsg));
@@ -184,6 +294,10 @@ ws.on('message', (data) => {
       case 'REGISTERED':
         console.log(`Registered as node: ${msg.nodeId}`);
         console.log(`Models: ${msg.models?.join(', ') || 'none'}`);
+        // P1.3: Log benchmark info on registration
+        if (benchmarkResult?.completed) {
+          console.log(`Benchmark: ${benchmarkResult.tok_per_sec} tok/sec (${benchmarkResult.model})`);
+        }
         console.log(`Status URL: http://localhost:3002/stats`);
         break;
         
@@ -210,17 +324,37 @@ ws.on('close', () => {
 // Send heartbeats
 setInterval(() => {
   if (ws.readyState === WebSocket.OPEN) {
+    // P1.3: Calculate utilization
+    const now = Date.now();
+    const wallMs = now - wallMsStart;
+    const utilization = wallMs > 0 ? Math.round((busyMsTotal / wallMs) * 1000) / 10 : 0;
+    
+    // P1.3: Calculate jobs per hour
+    const hoursRunning = wallMs / (1000 * 60 * 60);
+    const jobsPerHour = hoursRunning > 0 ? Math.round((jobsCompleted / hoursRunning) * 10) / 10 : 0;
+    
     ws.send(JSON.stringify({
       type: 'HEARTBEAT',
-      load: 0,
+      load: currentJobStartMs ? 1 : 0, // Current load (1 if busy, 0 if idle)
       latency: 0,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      // P1.3: Include benchmark metrics in heartbeat
+      tok_per_sec: benchmarkResult?.tok_per_sec || 0,
+      model: benchmarkResult?.model || MODEL_PROFILE,
+      hardware: benchmarkResult?.hardware || detectHardware(),
+      // P1.3: Include utilization metrics
+      utilization,
+      jobs_completed: jobsCompleted,
+      jobs_per_hour: jobsPerHour
     }));
   }
 }, 10000);
 
 async function handleJob(job: Job) {
   console.log(`Processing job ${job.jobId} for model ${job.model}`);
+  
+  // P1.3: Track job start for utilization
+  currentJobStartMs = Date.now();
 
   try {
     const startTime = Date.now();
@@ -233,38 +367,36 @@ async function handleJob(job: Job) {
       usageSource: 'reported' | 'estimated';
     };
     
-    // P0 TASK 3: Track actual served model
     let servedModel: string;
 
     // Route to appropriate handler
-    // Only use vLLM if: 1) vLLM mode, 2) vLLM is available, 3) job requests deepseek-v3
     if (isVLLMMode && vllmAvailable && job.model === 'deepseek-v3') {
       result = await callVLLM(job);
       servedModel = 'deepseek-v3';
     } else {
-      // Fallback to echo-stub for any other case (including router fallback)
       result = callEchoStub(job);
       servedModel = 'echo-stub';
     }
 
     const elapsedMs = Date.now() - startTime;
     const ts = Date.now();
+    
+    // P1.3: Update utilization tracking
+    busyMsTotal += elapsedMs;
+    jobsCompleted++;
+    currentJobStartMs = null;
 
-    // Generate receipt fields (anti-fraud)
     const promptText = job.messages.map(m => m.content).join('\n');
     const promptHash = hashString(promptText);
     const outputHash = hashString(result.output);
-
-    // Create nonce for replay protection
     const nonce = randomUUID();
 
-    // Build receipt for signing
     const receipt = {
       version: RECEIPT_VERSION,
       jobId: job.jobId,
       nodeId: NODE_ID,
       model: job.model,
-      servedModel,  // P0 TASK 3: Include actual served model in receipt
+      servedModel,
       nonce,
       ts,
       promptHash,
@@ -276,16 +408,14 @@ async function handleJob(job: Job) {
       usageSource: result.usageSource
     };
 
-    // Sign the receipt
     const signature = signReceipt(receipt);
 
-    // Send signed result to router
     ws.send(JSON.stringify({
       type: 'RESULT',
       jobId: job.jobId,
       nodeId: NODE_ID,
       model: job.model,
-      servedModel,  // P0 TASK 3: Return actual served model
+      servedModel,
       output: result.output,
       nonce,
       promptHash,
@@ -305,6 +435,7 @@ async function handleJob(job: Job) {
 
   } catch (error) {
     console.error(`Job ${job.jobId} failed:`, error);
+    currentJobStartMs = null;
 
     ws.send(JSON.stringify({
       type: 'RESULT',
@@ -342,7 +473,6 @@ async function callVLLM(job: Job): Promise<{
   const data = await response.json();
   const output = data.choices[0]?.message?.content || '';
 
-  // Prefer reported tokens from vLLM, fallback to estimation
   const reportedTokensIn = data.usage?.prompt_tokens;
   const reportedTokensOut = data.usage?.completion_tokens;
 
@@ -381,14 +511,11 @@ function callEchoStub(job: Job): {
 }
 
 function hashString(str: string): string {
-  // SHA-256 hash for receipt integrity
   return createHash('sha256').update(str, 'utf8').digest('hex');
 }
 
 function signReceipt(receiptData: object): string {
-  // Sign receipt data with node private key
   const data = JSON.stringify(receiptData);
-  // Create a temporary private key object from PEM for signing
   const privateKey = createPrivateKey(nodePrivateKeyPem);
   const signature = sign(null, Buffer.from(data), privateKey);
   return signature.toString('base64');
@@ -399,14 +526,7 @@ function detectHardware(): string {
   if (gpu && gpu !== 'CPU-only') {
     return gpu;
   }
-  
-  // Try to detect GPU
-  try {
-    // This would need nvidia-smi or similar in real implementation
-    return 'CPU-only';
-  } catch {
-    return 'CPU-only';
-  }
+  return 'CPU-only';
 }
 
 console.log('Node Agent starting...');

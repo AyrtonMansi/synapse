@@ -32,6 +32,8 @@ services:
       - NODE_WALLET=${NODE_WALLET:-0xStubNodeWallet123}
       - MODEL_PROFILE=${MODEL_PROFILE:-echo-stub}
       - NODE_ID=${NODE_ID:-stub-node-001}
+    volumes:
+      - node-keys:/app/keys  # P0 TASK 1: Persistent key storage
     depends_on:
       - router
     networks:
@@ -94,6 +96,7 @@ services:
 volumes:
   gateway-data:
   huggingface-cache:
+  node-keys:  # P0 TASK 1: Persistent storage for node identity keys
 
 networks:
   synapse:

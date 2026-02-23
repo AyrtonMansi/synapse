@@ -84,8 +84,12 @@ EMAIL_RESPONSE=$(curl -s -X POST ${API_URL}/auth/api-key \
   -H "Content-Type: application/json" \
   -d '{"email":"test@example.com"}')
 EMAIL_KEY=$(echo "$EMAIL_RESPONSE" | grep -o '"api_key":"[^"]*"' | cut -d'"' -f4)
-[ -n "$EMAIL_KEY" ]
-check_result $? "API key generated with email"
+# P1.2: Validate new key format
+if echo "$EMAIL_KEY" | grep -qE '^syn_live_[a-zA-Z0-9]{16}_[a-zA-Z0-9]{32}$'; then
+  check_result 0 "API key generated with email (new O(1) format)"
+else
+  check_result 1 "API key format invalid (expected: syn_live_<16-char>_<32-char>)"
+fi
 
 echo ""
 echo "7) Generating API key (wallet)..."
@@ -93,8 +97,12 @@ WALLET_RESPONSE=$(curl -s -X POST ${API_URL}/auth/api-key \
   -H "Content-Type: application/json" \
   -d '{"wallet":"0x1234567890123456789012345678901234567890"}')
 WALLET_KEY=$(echo "$WALLET_RESPONSE" | grep -o '"api_key":"[^"]*"' | cut -d'"' -f4)
-[ -n "$WALLET_KEY" ]
-check_result $? "API key generated with wallet"
+# P1.2: Validate new key format
+if echo "$WALLET_KEY" | grep -qE '^syn_live_[a-zA-Z0-9]{16}_[a-zA-Z0-9]{32}$'; then
+  check_result 0 "API key generated with wallet (new O(1) format)"
+else
+  check_result 1 "API key format invalid (expected: syn_live_<16-char>_<32-char>)"
+fi
 
 echo ""
 echo "8) Single chat completion..."

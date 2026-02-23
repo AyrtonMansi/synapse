@@ -18,6 +18,12 @@ interface DispatchJobResult {
   prompt_hash?: string;
   output_hash?: string;
   ts?: number;
+  // P0 TASK 3: Served model transparency
+  served_model?: string;
+  fallback?: boolean;
+  requested_model?: string;
+  // P0 TASK 2: Receipt verification
+  receipt_verified?: string;
 }
 
 /**

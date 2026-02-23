@@ -6,8 +6,16 @@ const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 // Ethereum address validation (0x followed by 40 hex chars)
 const ethereumAddressRegex = /^0x[a-fA-F0-9]{40}$/;
 
+// P1.2: New API key format validation
+// Format: syn_live_<16-char-keyId>_<32-char-secret>
+// Example: syn_live_a1b2c3d4e5f67890_1234567890abcdef1234567890abcdef
+const apiKeyRegex = /^syn_live_[a-zA-Z0-9]{16}_[a-zA-Z0-9]{32}$/;
+
 /**
- * Schema for creating an API key
+ * P1.2: Schema for creating an API key
+ * Generates keys in format: syn_live_<16-char-keyId>_<32-char-secret>
+ * - keyId enables O(1) DB lookup
+ * - secret enables bcrypt verification
  */
 export const createApiKeySchema = z.object({
   email: z.string()
@@ -20,6 +28,12 @@ export const createApiKeySchema = z.object({
   (data) => data.email || data.wallet,
   { message: 'Either email or wallet must be provided' }
 );
+
+/**
+ * P1.2: API key validation schema
+ */
+export const apiKeySchema = z.string()
+  .regex(apiKeyRegex, 'Invalid API key format. Expected: syn_live_<16-char-keyId>_<32-char-secret>');
 
 export type CreateApiKeyInput = z.infer<typeof createApiKeySchema>;
 

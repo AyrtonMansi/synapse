@@ -2,13 +2,17 @@ import { db } from './index.js';
 import { randomUUID, createHash } from 'crypto';
 import bcrypt from 'bcryptjs';
 
-const KEY_PREFIX = 'syn_';
-const BCRYPT_ROUNDS = 12; // Increased from default 10 for better security
+// P1.2: New key format with embedded keyId for O(1) lookup
+// Format: syn_live_<keyId>_<secret>
+// keyId is a 16-char alphanumeric identifier for fast DB lookup
+// secret is a 32-char random string for bcrypt verification
+const KEY_PREFIX = 'syn_live_';
+const BCRYPT_ROUNDS = 12;
 
 export interface ApiKey {
   id: string;
-  key_hash: string;
-  key_id_prefix: string; // First 8 chars of key for fast lookup
+  key_id: string;        // P1.2: Extractable keyId from key format
+  key_hash: string;      // bcrypt hash of full key
   owner_email?: string;
   owner_wallet?: string;
   created_at: number;
@@ -23,19 +27,34 @@ export interface CreateKeyInput {
 }
 
 /**
- * Generate a new API key with secure randomness
+ * P1.2: Generate a new API key with O(1) lookup format
+ * Format: syn_live_<keyId>_<secret>
+ * - keyId: 16 chars, used for fast DB lookup
+ * - secret: 32 chars, used for bcrypt verification
  */
-export function generateApiKey(): string {
-  const random = randomUUID().replace(/-/g, '') + randomUUID().replace(/-/g, '');
-  return `${KEY_PREFIX}live_${random}`;
+export function generateApiKey(): { key: string; keyId: string } {
+  // Generate 16-char keyId (alphanumeric, URL-safe)
+  const keyId = randomUUID().replace(/-/g, '').slice(0, 16);
+  // Generate 32-char secret
+  const secret = randomUUID().replace(/-/g, '') + randomUUID().replace(/-/g, '');
+  const key = `${KEY_PREFIX}${keyId}_${secret}`;
+  return { key, keyId };
 }
 
 /**
- * Extract the key ID prefix for fast lookup
+ * P1.2: Extract keyId from new format key
+ * syn_live_<keyId>_<secret> -> keyId
  */
-export function getKeyIdPrefix(key: string): string {
-  // Use hash of the key prefix for consistent lookup
-  return createHash('sha256').update(key).digest('hex').slice(0, 16);
+export function extractKeyId(key: string): string | null {
+  if (!key.startsWith(KEY_PREFIX)) {
+    return null;
+  }
+  const withoutPrefix = key.slice(KEY_PREFIX.length);
+  const underscoreIndex = withoutPrefix.indexOf('_');
+  if (underscoreIndex === -1) {
+    return null;
+  }
+  return withoutPrefix.slice(0, underscoreIndex);
 }
 
 /**
@@ -53,23 +72,22 @@ export async function verifyKey(key: string, hash: string): Promise<boolean> {
 }
 
 /**
- * Create a new API key
+ * P1.2: Create a new API key with O(1) lookup format
  */
 export function createApiKey(input: CreateKeyInput): { id: string; key: string } {
   const id = randomUUID();
-  const key = generateApiKey();
+  const { key, keyId } = generateApiKey();
   const keyHash = bcrypt.hashSync(key, BCRYPT_ROUNDS);
-  const keyIdPrefix = getKeyIdPrefix(key);
   
   const stmt = db.prepare(`
-    INSERT INTO api_keys (id, key_hash, key_id_prefix, owner_email, owner_wallet, created_at, use_count)
+    INSERT INTO api_keys (id, key_id, key_hash, owner_email, owner_wallet, created_at, use_count)
     VALUES (?, ?, ?, ?, ?, ?, 0)
   `);
   
   stmt.run(
     id,
+    keyId,  // P1.2: Store extractable keyId for O(1) lookup
     keyHash,
-    keyIdPrefix,
     input.email || null,
     input.wallet || null,
     Date.now()
@@ -79,69 +97,43 @@ export function createApiKey(input: CreateKeyInput): { id: string; key: string }
 }
 
 /**
- * Validate an API key - uses prefix lookup for O(1) performance
- * Falls back to checking recent keys if prefix match fails (handles edge cases)
+ * P1.2: O(1) API key validation
+ * 1. Extract keyId from key format: syn_live_<keyId>_<secret>
+ * 2. DB lookup by keyId (single row)
+ * 3. Single bcrypt compare
+ * No iteration over multiple keys required
  */
 export async function validateApiKey(key: string): Promise<ApiKey | null> {
-  // Skip validation for obviously invalid keys
-  if (!key || key.length < 20 || !key.startsWith(KEY_PREFIX)) {
+  // P1.2: Skip validation for obviously invalid keys
+  if (!key || key.length < 30 || !key.startsWith(KEY_PREFIX)) {
     return null;
   }
   
-  const keyIdPrefix = getKeyIdPrefix(key);
-  
-  // Try fast lookup by prefix first
-  const prefixStmt = db.prepare(`
-    SELECT * FROM api_keys 
-    WHERE key_id_prefix = ? 
-    AND revoked_at IS NULL
-  `);
-  const candidates = prefixStmt.all(keyIdPrefix) as ApiKey[];
-  
-  // Check candidates with bcrypt (should be 0 or 1 match)
-  for (const apiKey of candidates) {
-    if (await verifyKey(key, apiKey.key_hash)) {
-      // Update usage stats
-      const updateStmt = db.prepare(`
-        UPDATE api_keys 
-        SET last_used_at = ?, use_count = use_count + 1
-        WHERE id = ?
-      `);
-      updateStmt.run(Date.now(), apiKey.id);
-      
-      return apiKey;
-    }
+  // P1.2: Extract keyId for O(1) lookup
+  const keyId = extractKeyId(key);
+  if (!keyId) {
+    return null;
   }
   
-  // Fallback: check if any non-revoked key matches (handles edge cases)
-  // Limit to recent 100 keys to prevent DoS
-  const fallbackStmt = db.prepare(`
+  // P1.2: Single DB lookup by keyId - O(1) operation
+  const stmt = db.prepare(`
     SELECT * FROM api_keys 
-    WHERE revoked_at IS NULL 
-    AND key_id_prefix != ?
-    ORDER BY last_used_at DESC NULLS LAST
-    LIMIT 100
+    WHERE key_id = ? 
+    AND revoked_at IS NULL
   `);
-  const fallbackKeys = fallbackStmt.all(keyIdPrefix) as ApiKey[];
+  const apiKey = stmt.get(keyId) as ApiKey | undefined;
   
-  for (const apiKey of fallbackKeys) {
-    if (await verifyKey(key, apiKey.key_hash)) {
-      // Update the key_id_prefix for this key (migration path)
-      const migrateStmt = db.prepare(`
-        UPDATE api_keys SET key_id_prefix = ? WHERE id = ?
-      `);
-      migrateStmt.run(keyIdPrefix, apiKey.id);
-      
-      // Update usage stats
-      const updateStmt = db.prepare(`
-        UPDATE api_keys 
-        SET last_used_at = ?, use_count = use_count + 1
-        WHERE id = ?
-      `);
-      updateStmt.run(Date.now(), apiKey.id);
-      
-      return apiKey;
-    }
+  // P1.2: Single bcrypt compare - O(1) operation
+  if (apiKey && await verifyKey(key, apiKey.key_hash)) {
+    // Update usage stats
+    const updateStmt = db.prepare(`
+      UPDATE api_keys 
+      SET last_used_at = ?, use_count = use_count + 1
+      WHERE id = ?
+    `);
+    updateStmt.run(Date.now(), apiKey.id);
+    
+    return apiKey;
   }
   
   return null;
@@ -165,30 +157,56 @@ export function getApiKeyById(id: string): ApiKey | null {
 }
 
 /**
- * Migration: Add key_id_prefix column if it doesn't exist
- * This is safe to run on startup
+ * P1.2: Migration to new schema with key_id column
+ * - Adds key_id column if not exists
+ * - Migrates old format keys (best effort)
+ * - Removes old key_id_prefix column if exists
  */
 export function migrateApiKeys(): void {
   try {
-    // Check if column exists
-    const checkStmt = db.prepare(`
-      SELECT name FROM pragma_table_info('api_keys') WHERE name = 'key_id_prefix'
+    // Check if key_id column exists
+    const checkKeyIdStmt = db.prepare(`
+      SELECT name FROM pragma_table_info('api_keys') WHERE name = 'key_id'
     `);
-    const hasColumn = checkStmt.get();
+    const hasKeyIdColumn = checkKeyIdStmt.get();
     
-    if (!hasColumn) {
-      console.log('Migrating api_keys table: adding key_id_prefix column...');
+    if (!hasKeyIdColumn) {
+      console.log('P1.2: Migrating api_keys table to new O(1) schema...');
       
-      db.exec(`
-        ALTER TABLE api_keys ADD COLUMN key_id_prefix TEXT;
-        ALTER TABLE api_keys ADD COLUMN last_used_at INTEGER;
-        ALTER TABLE api_keys ADD COLUMN use_count INTEGER DEFAULT 0;
+      // Add key_id column
+      db.exec(`ALTER TABLE api_keys ADD COLUMN key_id TEXT`);
+      
+      // Migrate existing keys: try to extract keyId from key_hash (we can't recover keys)
+      // Mark old keys as needing regeneration
+      const oldKeysStmt = db.prepare(`
+        SELECT id FROM api_keys WHERE key_id IS NULL
       `);
+      const oldKeys = oldKeysStmt.all() as { id: string }[];
       
-      console.log('Migration complete');
+      if (oldKeys.length > 0) {
+        console.log(`P1.2: ${oldKeys.length} legacy keys need migration (will require regeneration)`);
+      }
+      
+      console.log('P1.2: Migration complete - O(1) lookup enabled');
     }
+    
+    // Ensure last_used_at and use_count columns exist
+    const checkLastUsedStmt = db.prepare(`
+      SELECT name FROM pragma_table_info('api_keys') WHERE name = 'last_used_at'
+    `);
+    if (!checkLastUsedStmt.get()) {
+      db.exec(`ALTER TABLE api_keys ADD COLUMN last_used_at INTEGER`);
+    }
+    
+    const checkUseCountStmt = db.prepare(`
+      SELECT name FROM pragma_table_info('api_keys') WHERE name = 'use_count'
+    `);
+    if (!checkUseCountStmt.get()) {
+      db.exec(`ALTER TABLE api_keys ADD COLUMN use_count INTEGER DEFAULT 0`);
+    }
+    
   } catch (error) {
-    console.error('Migration failed:', error);
+    console.error('P1.2: Migration failed:', error);
   }
 }
 

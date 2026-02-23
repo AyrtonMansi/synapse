@@ -3,6 +3,35 @@ import './App.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
+interface TestResult {
+  responseText?: string;
+  servedModel?: string;
+  requestedModel?: string;
+  isFallback?: boolean;
+  receiptVerified?: string;
+  nodeId?: string;
+  error?: string;
+  headers?: Record<string, string>;
+}
+
+// P1.4: Yield estimate interface
+interface YieldEstimate {
+  fingerprint: string;
+  model: string;
+  hardware: string;
+  tok_per_sec: number;
+  utilization_percent: number;
+  jobs_per_hour: number;
+  rate_per_1m_tokens: number;
+  estimated_revenue_per_day: {
+    low: number;
+    expected: number;
+    high: number;
+  };
+  health_score: number;
+  success_rate: number;
+}
+
 function App() {
   const [input, setInput] = useState('');
   const [apiKey, setApiKey] = useState<string | null>(null);
@@ -10,14 +39,26 @@ function App() {
   const [copied, setCopied] = useState(false);
   const [stats, setStats] = useState({ nodes_online: 0, jobs_today: 0 });
   const [activeTab, setActiveTab] = useState<'gateway' | 'node' | 'test'>('gateway');
-  const [testResult, setTestResult] = useState<{servedModel?: string, responseText?: string, error?: string} | null>(null);
+  const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [testLoading, setTestLoading] = useState(false);
+  // P1.4: Yield estimate state
+  const [yieldEstimates, setYieldEstimates] = useState<YieldEstimate[]>([]);
+  const [yieldLoading, setYieldLoading] = useState(false);
 
   useEffect(() => {
     fetchStats();
-    const interval = setInterval(fetchStats, 5000);
+    // P1.4: Fetch yield estimates when on test tab
+    if (activeTab === 'test') {
+      fetchYieldEstimates();
+    }
+    const interval = setInterval(() => {
+      fetchStats();
+      if (activeTab === 'test') {
+        fetchYieldEstimates();
+      }
+    }, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [activeTab]);
 
   const fetchStats = async () => {
     try {
@@ -31,6 +72,22 @@ function App() {
       }
     } catch {
       // ignore
+    }
+  };
+
+  // P1.4: Fetch yield estimates from gateway
+  const fetchYieldEstimates = async () => {
+    setYieldLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/yield-estimate`);
+      if (res.ok) {
+        const data = await res.json();
+        setYieldEstimates(data.estimates || []);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setYieldLoading(false);
     }
   };
 
@@ -62,6 +119,61 @@ function App() {
       navigator.clipboard.writeText(apiKey);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  // P0 TASK 3: Test completion and show served model
+  const runTest = async () => {
+    if (!apiKey) return;
+    
+    setTestLoading(true);
+    setTestResult(null);
+    
+    try {
+      const res = await fetch(`${API_URL}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'deepseek-v3',
+          messages: [{ role: 'user', content: 'Say hello in one word' }],
+          max_tokens: 10
+        })
+      });
+      
+      // Capture headers
+      const headers: Record<string, string> = {};
+      res.headers.forEach((value, key) => {
+        if (key.startsWith('x-synapse')) {
+          headers[key] = value;
+        }
+      });
+      
+      const data = await res.json();
+      
+      if (res.ok) {
+        setTestResult({
+          responseText: data.choices?.[0]?.message?.content || 'No response',
+          servedModel: data.model || headers['x-synapse-model-served'],
+          requestedModel: data.synapse_meta?.requested_model || headers['x-synapse-model-requested'],
+          isFallback: data.synapse_meta?.fallback === true || headers['x-synapse-fallback'] === 'true',
+          receiptVerified: data.synapse_meta?.receipt_verified,
+          nodeId: data.synapse_meta?.node_id,
+          headers
+        });
+      } else {
+        setTestResult({
+          error: data.error || data.message || 'Request failed'
+        });
+      }
+    } catch (err) {
+      setTestResult({
+        error: err instanceof Error ? err.message : 'Network error'
+      });
+    } finally {
+      setTestLoading(false);
     }
   };
 
@@ -139,15 +251,13 @@ function App() {
                 <div className="mt-6 text-left">
                   <div className="text-xs text-gray-500 mb-2">Example usage:</div>
                   <pre className="bg-gray-950 rounded-lg p-3 text-xs text-gray-400 overflow-x-auto">
-                    {`curl ${API_URL}/v1/chat/completions \\
-  -H "Authorization: Bearer ${apiKey.slice(0, 20)}..." \\
-  -d '{"model":"deepseek-v3","messages":[{"role":"user","content":"Hello"}]}'`}
+                    {`curl ${API_URL}/v1/chat/completions \\\n  -H "Authorization: Bearer ${apiKey.slice(0, 20)}..." \\\n  -d '{"model":"deepseek-v3","messages":[{"role":"user","content":"Hello"]}'`}
                   </pre>
                 </div>
               </div>
             )}
           </div>
-        ) : (
+        ) : activeTab === 'node' ? (
           <div className="bg-gray-900 rounded-xl p-6 border border-gray-800">
             <div className="text-sm text-gray-400 mb-4">
               Run a GPU node and earn SYN tokens
@@ -165,73 +275,166 @@ function App() {
               <div>• Starts earning on job completion</div>
             </div>
           </div>
-        )}
-
-        {activeTab === 'test' && (
+        ) : (
+          // P0 TASK 3 + P1.4: Test tab with served model display and yield estimates
           <div className="bg-gray-900 rounded-xl p-6 border border-gray-800">
             <div className="text-sm text-gray-400 mb-4">
-              Test inference and verify served model
+              Test inference and view miner yield estimates
             </div>
             
-            <button
-              onClick={async () => {
-                if (!apiKey) {
-                  setTestResult({ error: 'Generate API key first' });
-                  return;
-                }
-                setTestLoading(true);
-                try {
-                  const res = await fetch(`${API_URL}/v1/chat/completions`, {
-                    method: 'POST',
-                    headers: { 
-                      'Content-Type': 'application/json',
-                      'Authorization': `Bearer ${apiKey}`
-                    },
-                    body: JSON.stringify({
-                      model: 'deepseek-v3',
-                      messages: [{ role: 'user', content: 'Say hello' }],
-                      max_tokens: 50
-                    })
-                  });
-                  const servedModel = res.headers.get('x-synapse-model-served') || 'unknown';
-                  const data = await res.json();
-                  setTestResult({
-                    servedModel,
-                    responseText: data.choices?.[0]?.message?.content || JSON.stringify(data)
-                  });
-                } catch (e) {
-                  setTestResult({ error: String(e) });
-                } finally {
-                  setTestLoading(false);
-                }
-              }}
-              disabled={testLoading}
-              className="w-full bg-white text-black font-medium py-3 rounded-lg hover:bg-gray-200 disabled:opacity-50 transition-colors"
-            >
-              {testLoading ? 'Testing...' : 'Test Completion'}
-            </button>
-
-            {testResult?.error && (
-              <div className="mt-4 p-3 bg-red-900/30 border border-red-800 rounded-lg text-red-400 text-sm">
-                {testResult.error}
+            {!apiKey ? (
+              <div className="text-sm text-gray-500 text-center py-4">
+                Generate an API key first to run tests
               </div>
-            )}
-
-            {testResult?.servedModel && (
-              <div className="mt-4 space-y-3">
-                <div className="p-3 bg-gray-950 rounded-lg">
-                  <div className="text-xs text-gray-500 mb-1">Served Model (from header)</div>
-                  <div className={`font-mono text-sm ${testResult.servedModel === 'deepseek-v3' ? 'text-green-400' : 'text-yellow-400'}`}>
-                    {testResult.servedModel}
+            ) : (
+              <>
+                <button
+                  onClick={runTest}
+                  disabled={testLoading}
+                  className="w-full bg-white text-black font-medium py-3 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors mb-4"
+                >
+                  {testLoading ? 'Testing...' : 'Test Completion'}
+                </button>
+                
+                {testResult && (
+                  <div className="space-y-3 mb-6">
+                    {testResult.error ? (
+                      <div className="bg-red-900/30 border border-red-800 rounded-lg p-3">
+                        <div className="text-red-400 text-sm font-medium">Error</div>
+                        <div className="text-red-300 text-sm">{testResult.error}</div>
+                      </div>
+                    ) : (
+                      <>
+                        {/* Response text */}
+                        <div className="bg-gray-950 rounded-lg p-3">
+                          <div className="text-xs text-gray-500 mb-1">Response</div>
+                          <div className="text-sm text-gray-300">{testResult.responseText}</div>
+                        </div>
+                        
+                        {/* Model info */}
+                        <div className="bg-gray-950 rounded-lg p-3 space-y-2">
+                          <div className="text-xs text-gray-500 mb-2">Model Information</div>
+                          
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-400">Requested</span>
+                            <span className="text-sm font-mono text-gray-300">{testResult.requestedModel}</span>
+                          </div>
+                          
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-400">Served</span>
+                            <span className={`text-sm font-mono ${
+                              testResult.servedModel === testResult.requestedModel 
+                                ? 'text-green-400' 
+                                : 'text-yellow-400'
+                            }`}>
+                              {testResult.servedModel}
+                            </span>
+                          </div>
+                          
+                          {testResult.isFallback && (
+                            <div className="bg-yellow-900/30 border border-yellow-800 rounded px-2 py-1 mt-2">
+                              <span className="text-xs text-yellow-400">⚠️ Fallback to echo-stub</span>
+                            </div>
+                          )}
+                          
+                          <div className="flex justify-between items-center pt-2 border-t border-gray-800">
+                            <span className="text-xs text-gray-400">Node</span>
+                            <span className="text-xs font-mono text-gray-500 truncate max-w-[150px]">
+                              {testResult.nodeId || 'unknown'}
+                            </span>
+                          </div>
+                          
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-400">Receipt</span>
+                            <span className={`text-xs ${
+                              testResult.receiptVerified === 'valid' 
+                                ? 'text-green-400' 
+                                : testResult.receiptVerified?.startsWith('invalid')
+                                ? 'text-red-400'
+                                : 'text-yellow-400'
+                            }`}>
+                              {testResult.receiptVerified || 'unsigned'}
+                            </span>
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
-                </div>
-                <div className="p-3 bg-gray-950 rounded-lg">
-                  <div className="text-xs text-gray-500 mb-1">Response Preview</div>
-                  <div className="text-sm text-gray-300 line-clamp-3">
-                    {testResult.responseText}
+                )}
+                
+                {/* P1.4: Yield Estimates Section */}
+                <div className="border-t border-gray-800 pt-4">
+                  <div className="text-xs text-gray-500 mb-3 flex items-center justify-between">
+                    <span>Miner Yield Estimates</span>
+                    {yieldLoading && <span className="text-gray-600">Loading...</span>}
                   </div>
+                  
+                  {yieldEstimates.length === 0 ? (
+                    <div className="text-xs text-gray-600 text-center py-4">
+                      No active GPU nodes with benchmarks
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {yieldEstimates.map((estimate, idx) => (
+                        <div key={idx} className="bg-gray-950 rounded-lg p-3 space-y-2">
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-400">Fingerprint</span>
+                            <span className="text-xs font-mono text-gray-300">
+                              {estimate.fingerprint.slice(0, 8)}...
+                            </span>
+                          </div>
+                          
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-400">Model</span>
+                            <span className="text-xs text-gray-300">{estimate.model}</span>
+                          </div>
+                          
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-400">Throughput</span>
+                            <span className="text-xs text-green-400">
+                              {estimate.tok_per_sec > 0 ? `${estimate.tok_per_sec} tok/s` : 'N/A'}
+                            </span>
+                          </div>
+                          
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-400">Utilization</span>
+                            <span className="text-xs text-blue-400">
+                              {estimate.utilization_percent.toFixed(1)}%
+                            </span>
+                          </div>
+                          
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-400">Jobs/Hour</span>
+                            <span className="text-xs text-purple-400">
+                              {estimate.jobs_per_hour.toFixed(1)}
+                            </span>
+                          </div>
+                          
+                          {/* P1.4: Revenue estimate band */}
+                          <div className="pt-2 border-t border-gray-800">
+                            <div className="text-xs text-gray-500 mb-1">Est. Daily Revenue</div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-600">Low</span>
+                              <span className="text-xs text-yellow-500">${estimate.estimated_revenue_per_day.low.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-600">Expected</span>
+                              <span className="text-sm font-semibold text-green-400">${estimate.estimated_revenue_per_day.expected.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-600">High</span>
+                              <span className="text-xs text-yellow-500">${estimate.estimated_revenue_per_day.high.toFixed(2)}</span>
+                            </div>
+                            <div className="text-[10px] text-gray-600 mt-1 italic">
+                              *estimate based on current utilization
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </div>
+              </>
             )}
           </div>
         )}
