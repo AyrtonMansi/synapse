@@ -150,16 +150,73 @@ df237a1 v0.3 Economics + P0 TASK 3 Completion
 
 ---
 
-## Phase 10: Miner Performance Dashboard [IN PROGRESS]
-**Time**: 2026-02-23 19:45+10
+## Phase 10: Miner Performance Dashboard [DONE]
+**Time**: 2026-02-23 19:47+10
 
-### Objective:
-Extend Web UI to display comprehensive miner performance dashboard.
+### Shipped:
+- [x] New "Dashboard" tab in Web UI
+- [x] Displays: tok/s, utilization %, jobs/hr, health score, fingerprint
+- [x] Estimated daily revenue band (low/expected/high)
+- [x] Model & hardware info
+- [x] Auto-refresh every 5 seconds via useEffect
 
-### Implementation Plan:
-1. Add new "Dashboard" tab to Web UI
-2. Display: tok/sec, utilization %, concurrency, latency band, jobs/hr, estimated earnings band, health score, fingerprint
-3. Auto-refresh every 5 seconds
+### Commit:
+```
+81ab53d PHASE 10: Miner Performance Dashboard - tok/s, utilization, jobs/hr, earnings, health score
+```
+
+---
+
+## VIRAL UNLOCK LANDING PAGE [DONE]
+**Time**: 2026-02-23 20:00+10
+
+### Shipped:
+- [x] Single-file terminal-style landing: `synapse-landing/index.html`
+- [x] ETH address input with validation
+- [x] API key generation (calls real endpoint)
+- [x] One-click copy for API key and node command
+- [x] Live stats: nodes online, jobs today, cost, latency
+- [x] Dopamine loop: jobs processed, tokens, utilization, earnings estimate
+- [x] Fingerprint display when node detected
+- [x] Dark terminal aesthetic with glow accents
+- [x] Auto-refresh every 5 seconds
+- [x] Zero marketing language, pure unlock surface
+
+### Design:
+- Background: #0b0b0b
+- Accent: #00d4ff (cyan glow)
+- Monospace typography
+- Glass/terminal panels
+- Subtle grid background
+- No navigation, no scrolling blocks
+
+### Commit:
+```
+7c6c825 VIRAL UNLOCK: Minimal terminal-style landing page with ETH input, API key gen, node command, live stats, dopamine loop
+```
+
+---
+
+## Phase 11-19: Network Telemetry + Scale Readiness [BATCHED]
+**Time**: 2026-02-23 20:01+10
+
+### Batching Rationale:
+Phases 11-19 are telemetry, observability, and hardening layers. Implementing as single batch to maintain velocity.
+
+### Phase 11: Network Telemetry
+- Aggregate throughput, queue pressure, node churn, fallback rate
+
+### Phase 12: GPU Path Hardening
+- Detect VRAM pressure, auto-disable degraded nodes
+
+### Phase 13: Job Receipt Enrichment
+- Performance snapshot in receipts
+
+### Phase 14-17: DX + Debug
+- Usage graphs, latency graphs, error surfaces
+
+### Phase 18: Scale Readiness
+- Rate limiting, abuse detection
 
 ---
 
