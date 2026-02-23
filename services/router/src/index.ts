@@ -3,6 +3,8 @@ import websocket from '@fastify/websocket';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import { randomUUID, createPublicKey, verify } from 'crypto';
+// PHASE 8: Intelligent Router
+import { calculateRoutingScore, sortNodesByScore, applyLoadShedding, getRoutingMetrics } from './scoring.js';
 
 const app = Fastify({ 
   logger: true,
@@ -136,6 +138,9 @@ app.get('/stats', async () => {
   // P1.3: Build served model distribution
   const modelDistribution: Record<string, number> = { ...servedModelCounts };
   
+  // PHASE 8: Get routing metrics
+  const routingMetrics = getRoutingMetrics(nodeList);
+  
   return {
     // P1.3: Enhanced stats
     nodes_online: nodes.size,
@@ -144,6 +149,9 @@ app.get('/stats', async () => {
     avg_latency_ms: aggregateP50,
     served_model_counts: modelDistribution,
     queue_depth: pendingJobs.size,
+    
+    // PHASE 8: Intelligent Router metrics
+    routing: routingMetrics,
     
     // Detailed node info
     nodeDetails: nodeList.map(n => ({
@@ -171,6 +179,9 @@ app.get('/stats', async () => {
   };
 });
 
+// PHASE 8: Track recent failures per node for reliability penalty
+const recentFailures = new Map<string, number>();
+
 // Job dispatch endpoint (called by gateway)
 app.post('/dispatch', async (request, reply) => {
   const body = request.body as {
@@ -183,31 +194,27 @@ app.post('/dispatch', async (request, reply) => {
   
   const { model } = body;
   
-  // Find available nodes for this model with improved scoring
-  const availableNodes = Array.from(nodes.values())
+  // PHASE 8: Intelligent Router - Find available nodes using adaptive scoring
+  let availableNodes = Array.from(nodes.values())
     .filter(n => 
       n.models.includes(model) && 
-      n.healthScore > 0.3 &&           // Lower threshold but weighted heavily
+      n.healthScore > 0.3 &&           // Minimum health threshold
       n.successRate > 0.5 &&           // Require >50% success rate
-      n.load < n.concurrency
-    )
-    .sort((a, b) => {
-      // Routing weight = success_rate * health / (1 + latency_penalty) / price_factor
-      // Higher score = better node
-      const latencyPenaltyA = Math.min(a.avgLatencyMs / 1000, 10); // Cap at 10x
-      const latencyPenaltyB = Math.min(b.avgLatencyMs / 1000, 10);
-      const priceFactorA = 1 + (a.pricePer1m / 0.01); // Normalize to ~1-2 range
-      const priceFactorB = 1 + (b.pricePer1m / 0.01);
-      
-      const scoreA = (a.successRate * a.healthScore * 100) 
-        / (1 + latencyPenaltyA) 
-        / priceFactorA;
-      const scoreB = (b.successRate * b.healthScore * 100) 
-        / (1 + latencyPenaltyB) 
-        / priceFactorB;
-      
-      return scoreB - scoreA;
-    });
+      n.load < n.concurrency           // Has capacity
+    );
+  
+  // PHASE 8: Apply soft load shedding
+  availableNodes = applyLoadShedding(availableNodes);
+  
+  // PHASE 8: Sort by intelligent routing score
+  availableNodes = sortNodesByScore(availableNodes);
+  
+  // Log routing decision for observability
+  if (availableNodes.length > 0) {
+    const topNode = availableNodes[0];
+    const score = calculateRoutingScore(topNode);
+    console.log(`[PHASE 8] Routing to ${topNode.id} (score: ${score.score}, perf: ${score.components.performance}, reliability: ${score.components.reliability})`);
+  }
   
   if (availableNodes.length === 0) {
     // P0 TASK 3: Explicit fallback tracking

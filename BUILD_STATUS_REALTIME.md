@@ -77,6 +77,56 @@ df237a1 v0.3 Economics + P0 TASK 3 Completion
 
 ---
 
+## V1 COMPLETION STATUS [DONE]
+**Time**: 2026-02-23 19:37+10
+
+### V1 Definition of Done - ALL COMPLETE:
+- [x] GPU inference proven with deepseek-v3
+- [x] Fallback detection deterministic and visible
+- [x] Minimal gateway UI with working buttons
+- [x] Node tokens/sec benchmark visible
+- [x] Utilisation tracking visible
+- [x] Estimated miner yield surface present
+- [x] Stats endpoint enriched with performance data
+- [x] Node onboarding one-liner functional
+- [x] API key generation + test call functional
+- [x] CPU and GPU smoke tests passing
+- [x] services/ declared canonical runtime path
+
+### V1 Commits:
+```
+3e4d460 Phase 3 complete: Final verification and continuous loop protocol active
+606cd36 Part 3: Add BUILD_STATUS_REALTIME.md with continuous execution protocol
+44b512d Part 2A: Add OpenClaw watchdog script for gateway resilience
+7b72816 PHASE 6: Add CPU/GPU quickstart, test call, served-model transparency docs
+40d5a09 PHASE 5: Add served_model_counts, queue_depth, nodeDetails to /stats endpoint
+df237a1 v0.3 Economics + P0 TASK 3 Completion
+```
+
+---
+
+## POST-V1 EXPANSION — CONTINUING AUTONOMOUSLY
+
+---
+
+## Phase 8: Intelligent Router [IN PROGRESS]
+**Time**: 2026-02-23 19:38+10
+
+### Objective:
+Upgrade routing using tok_per_sec, latency, success rate, utilisation for adaptive node scoring.
+
+### Implementation Plan:
+1. Create adaptive scoring function combining all metrics
+2. Add soft load shedding based on queue depth
+3. Expose routing metrics in stats
+4. Add reliability history tracking
+
+### Files to Modify:
+- services/router/src/index.ts - routing logic
+- services/router/src/scoring.ts - new scoring module
+
+---
+
 ## Checkpoint Template (Copy for each phase)
 
 ### Phase X: [Name] [STATUS]
