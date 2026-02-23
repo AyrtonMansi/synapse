@@ -125,6 +125,10 @@ app.get('/stats', async () => {
       avg_latency_ms: Math.round(usageStats.avg_latency) || 0,
       tokens_today: tokensToday,
       tokens_total: usageStats.total_tokens,
+      // PHASE 5: Observability - enriched stats from router
+      served_model_counts: routerStats.served_model_counts || {},
+      queue_depth: routerStats.queue_depth || 0,
+      nodeDetails: routerStats.nodeDetails || [],
       updated_at: new Date(now).toISOString()
     };
     
