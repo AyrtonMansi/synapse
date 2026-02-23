@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-echo "🧪 Synapse Smoke Test (Extended)"
-echo "================================="
+echo "🧪 Synapse Smoke Test (Extended + Hardening)"
+echo "=============================================="
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -15,9 +15,9 @@ FAILED=0
 
 check_result() {
   if [ $1 -eq 0 ]; then
-    echo "${GREEN}✓${NC} $2"
+    echo -e "${GREEN}✓${NC} $2"
   else
-    echo "${RED}✗${NC} $2"
+    echo -e "${RED}✗${NC} $2"
     FAILED=1
   fi
 }
@@ -154,10 +154,126 @@ else
   check_result 1 "nodes_online >= 1 (got $NODES_CHECK)"
 fi
 
+# ============================================================
+# HARDENING TEST A: Concurrency (20 parallel requests)
+# ============================================================
 echo ""
-echo "================================="
+echo "12) HARDENING: Concurrency test (20 parallel)..."
+TEMP_DIR=$(mktemp -d)
+for i in $(seq 1 20); do
+  (
+    HTTP_CODE=$(curl -s -o "$TEMP_DIR/result_$i.txt" -w "%{http_code}" \
+      -X POST ${API_URL}/v1/chat/completions \
+      -H "Authorization: Bearer $EMAIL_KEY" \
+      -H "Content-Type: application/json" \
+      -d "{\"model\": \"deepseek-v3\", \"messages\": [{\"role\": \"user\", \"content\": \"Concurrent test $i\"}]}")
+    echo "$HTTP_CODE" > "$TEMP_DIR/code_$i.txt"
+  ) &
+done
+wait
+
+SUCCESS_COUNT=0
+FAILURES=""
+for i in $(seq 1 20); do
+  if grep -q "choices" "$TEMP_DIR/result_$i.txt" 2>/dev/null; then
+    SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+  else
+    CODE=$(cat "$TEMP_DIR/code_$i.txt" 2>/dev/null || echo "unknown")
+    BODY=$(head -c 100 "$TEMP_DIR/result_$i.txt" 2>/dev/null || echo "empty")
+    FAILURES="${FAILURES}  - Request $i: HTTP $CODE, Body: $BODY\n"
+  fi
+done
+rm -rf "$TEMP_DIR"
+
+echo "   Success: $SUCCESS_COUNT/20"
+if [ "$SUCCESS_COUNT" -ge 18 ]; then
+  check_result 0 "Concurrency test >=18/20 succeeded"
+else
+  check_result 1 "Concurrency test >=18/20 succeeded (only $SUCCESS_COUNT)"
+  if [ -n "$FAILURES" ]; then
+    echo -e "   Failures:\n$FAILURES"
+  fi
+fi
+
+# ============================================================
+# HARDENING TEST B: Node failure & recovery
+# ============================================================
+echo ""
+echo "13) HARDENING: Node failure & recovery test..."
+
+# Get baseline
+BASELINE_NODES=$(curl -s ${ROUTER_URL}/stats | grep -o '"nodes":[0-9]*' | cut -d':' -f2)
+echo "   Baseline nodes: $BASELINE_NODES"
+
+# Stop node-agent
+echo "   Stopping node-agent..."
+docker compose stop node-agent 2>&1 | tail -1
+
+# Wait for router to detect disconnection (max 10s)
+echo "   Waiting for router to remove node (max 10s)..."
+NODE_REMOVED=0
+for i in $(seq 1 10); do
+  sleep 1
+  CURRENT_NODES=$(curl -s ${ROUTER_URL}/stats | grep -o '"nodes":[0-9]*' | cut -d':' -f2)
+  if [ "$CURRENT_NODES" -lt "$BASELINE_NODES" ]; then
+    echo "   Node removed after ${i}s (nodes: $BASELINE_NODES -> $CURRENT_NODES)"
+    NODE_REMOVED=1
+    break
+  fi
+done
+
+if [ "$NODE_REMOVED" -eq 1 ]; then
+  check_result 0 "Router removed node within 10s"
+else
+  check_result 1 "Router removed node within 10s (still $CURRENT_NODES nodes)"
+fi
+
+# Test gateway returns clean error (no crash)
+echo "   Testing gateway error handling..."
+ERROR_RESPONSE=$(curl -s -X POST ${API_URL}/v1/chat/completions \
+  -H "Authorization: Bearer $EMAIL_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "deepseek-v3", "messages": [{"role": "user", "content": "Test"}]}')
+
+if echo "$ERROR_RESPONSE" | grep -q "error"; then
+  check_result 0 "Gateway returns clean error when no nodes available"
+elif echo "$ERROR_RESPONSE" | grep -q "choices"; then
+  check_result 0 "Gateway rerouted to fallback (echo-stub available)"
+else
+  check_result 1 "Gateway returned unexpected response"
+  echo "   Response: $ERROR_RESPONSE"
+fi
+
+# Restart node-agent
+echo "   Restarting node-agent..."
+docker compose start node-agent 2>&1 | tail -1
+
+# Wait for re-registration (max 15s)
+echo "   Waiting for node to re-register (max 15s)..."
+NODE_REREGISTERED=0
+for i in $(seq 1 15); do
+  sleep 1
+  CURRENT_NODES=$(curl -s ${ROUTER_URL}/stats | grep -o '"nodes":[0-9]*' | cut -d':' -f2)
+  if [ "$CURRENT_NODES" -ge "$BASELINE_NODES" ]; then
+    echo "   Node re-registered after ${i}s (nodes: $CURRENT_NODES)"
+    NODE_REREGISTERED=1
+    break
+  fi
+  if [ $((i % 5)) -eq 0 ]; then
+    echo "   ... ${i}s elapsed"
+  fi
+done
+
+if [ "$NODE_REREGISTERED" -eq 1 ]; then
+  check_result 0 "Node re-registered successfully"
+else
+  check_result 1 "Node re-registered successfully (still $CURRENT_NODES nodes)"
+fi
+
+echo ""
+echo "=============================================="
 if [ "$FAILED" -eq 0 ]; then
-  echo "${GREEN}✅ ALL TESTS PASSED${NC}"
+  echo -e "${GREEN}✅ ALL TESTS PASSED${NC}"
   echo ""
   echo "Synapse MVP is running:"
   echo "  - Gateway: http://localhost:3001"
@@ -165,7 +281,7 @@ if [ "$FAILED" -eq 0 ]; then
   echo "  - Web UI:  http://localhost:3000"
   exit 0
 else
-  echo "${RED}❌ SOME TESTS FAILED${NC}"
+  echo -e "${RED}❌ SOME TESTS FAILED${NC}"
   echo "Logs: docker compose logs"
   exit 1
 fi
