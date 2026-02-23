@@ -24,7 +24,7 @@ const MODELS = [
 // Auth middleware
 app.addHook('onRequest', async (request, reply) => {
   // Skip auth for specific routes
-  const publicRoutes = ['/health', '/auth/api-key', '/v1/models'];
+  const publicRoutes = ['/health', '/auth/api-key', '/v1/models', '/stats'];
   if (publicRoutes.includes(request.url)) return;
   
   const authHeader = request.headers.authorization;
