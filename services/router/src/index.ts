@@ -192,7 +192,8 @@ function dispatchToNode(node: Node, job: any): Promise<any> {
 
 // WebSocket endpoint for nodes
 app.register(async function (app) {
-  app.get('/ws', { websocket: true }, (socket, req) => {
+  app.get('/ws', { websocket: true }, (connection: any, req) => {
+    const socket = connection.socket;
     let nodeId: string | null = null;
     
     console.log('Node connected');
@@ -203,7 +204,7 @@ app.register(async function (app) {
         
         switch (data.type) {
           case 'REGISTER':
-            nodeId = data.nodeId || randomUUID();
+            nodeId = (data.nodeId || randomUUID()) as string;
             const now = Date.now();
             
             // Check if node re-registering (preserve stats)
