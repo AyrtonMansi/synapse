@@ -326,9 +326,9 @@ app.register(async function (app) {
 setInterval(() => {
   const now = Date.now();
   
-  // Cleanup dead nodes (60 second timeout)
+  // Cleanup dead nodes (15 second timeout for faster failure detection)
   for (const [id, node] of nodes) {
-    if (now - node.lastSeen > 60000) {
+    if (now - node.lastSeen > 15000) {
       console.log(`Node timeout cleanup: ${id}`);
       
       // Reject any pending jobs for this node
@@ -353,7 +353,7 @@ setInterval(() => {
       pendingJobs.delete(jobId);
     }
   }
-}, 10000);
+}, 3000);  // Check every 3 seconds for faster node removal
 
 const PORT = parseInt(process.env.PORT || '3002');
 
