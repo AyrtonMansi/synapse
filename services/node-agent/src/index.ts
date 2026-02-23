@@ -172,12 +172,12 @@ async function handleJob(job: Job) {
     };
 
     // Route to appropriate handler
-    if (job.model === 'deepseek-v3' && vllmAvailable) {
+    // Only use vLLM if: 1) vLLM mode, 2) vLLM is available, 3) job requests deepseek-v3
+    if (isVLLMMode && vllmAvailable && job.model === 'deepseek-v3') {
       result = await callVLLM(job);
-    } else if (job.model === 'echo-stub') {
-      result = callEchoStub(job);
     } else {
-      throw new Error(`Model ${job.model} not available on this node`);
+      // Fallback to echo-stub for any other case (including router fallback)
+      result = callEchoStub(job);
     }
 
     const elapsedMs = Date.now() - startTime;
