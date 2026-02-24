@@ -1,0 +1,56 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: synapse-ingress
+  namespace: synapse
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "1m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "https://app.synapse.sh"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "Authorization, Content-Type"
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+spec:
+  tls:
+  - hosts:
+    - api.synapse.sh
+    - ws.synapse.sh
+    secretName: synapse-tls
+  rules:
+  - host: api.synapse.sh
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: gateway-api
+            port:
+              number: 80
+  - host: ws.synapse.sh
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: router
+            port:
+              number: 80
+---
+# Optional: Cloudflare Origin CA certificate for additional security
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloudflare-origin-ca
+  namespace: synapse
+type: kubernetes.io/tls
+data:
+  tls.crt: ""  # Base64 encoded Cloudflare origin cert
+  tls.key: ""  # Base64 encoded private key
