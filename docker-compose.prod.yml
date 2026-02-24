@@ -1,0 +1,174 @@
+# Synapse Production Deployment
+# Usage: docker compose -f docker-compose.prod.yml up -d
+# 
+# Prerequisites:
+# - Docker + Docker Compose installed
+# - Images pushed to GHCR (ghcr.io/ayrtonmansi/synapse-*)
+# - Environment file at ./.env.prod
+
+version: '3.8'
+
+services:
+  # Reverse Proxy + TLS
+  nginx:
+    image: nginx:alpine
+    container_name: synapse-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infra/nginx/ssl:/etc/nginx/ssl:ro
+      - certbot-data:/etc/letsencrypt:ro
+    depends_on:
+      - gateway-api
+      - router
+    networks:
+      - synapse
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Optional: Auto TLS with Certbot
+  certbot:
+    image: certbot/certbot:latest
+    container_name: synapse-certbot
+    profiles:
+      - tls
+    volumes:
+      - certbot-data:/etc/letsencrypt
+      - ./synapse-landing:/var/www/html:ro
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    networks:
+      - synapse
+
+  # Gateway API (REST API)
+  gateway-api:
+    image: ghcr.io/ayrtonmansi/synapse-gateway-api:latest
+    container_name: synapse-gateway-api
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - ROUTER_URL=http://router:3002
+      - DATABASE_URL=/app/data/gateway.db
+      - CORS_ORIGINS=${CORS_ORIGINS:-https://app.synapse.sh,https://synapse.sh}
+      - LOG_LEVEL=info
+    volumes:
+      - gateway-data:/app/data
+    ports:
+      - "127.0.0.1:3001:3001"  # Local only, nginx proxies
+    depends_on:
+      - router
+    networks:
+      - synapse
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Router (WebSocket)
+  router:
+    image: ghcr.io/ayrtonmansi/synapse-router:latest
+    container_name: synapse-router
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3002
+      - LOG_LEVEL=info
+    ports:
+      - "127.0.0.1:3002:3002"  # Local only, nginx proxies WS
+    networks:
+      - synapse
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Coordinator (service mesh)
+  coordinator:
+    image: ghcr.io/ayrtonmansi/synapse-coordinator:latest
+    container_name: synapse-coordinator
+    restart: unless-stopped
+    profiles:
+      - coordinator  # Only start when implemented
+    environment:
+      - NODE_ENV=production
+      - PORT=3003
+      - ROUTER_URL=http://router:3002
+    ports:
+      - "127.0.0.1:3003:3003"
+    depends_on:
+      - router
+    networks:
+      - synapse
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Settlement Daemon
+  settlement:
+    image: ghcr.io/ayrtonmansi/synapse-settlement:latest
+    container_name: synapse-settlement
+    restart: unless-stopped
+    profiles:
+      - settlement  # Only start when implemented
+    environment:
+      - NODE_ENV=production
+      - COORDINATOR_URL=http://coordinator:3003
+      - SETTLEMENT_INTERVAL_MS=60000
+    depends_on:
+      - coordinator
+    networks:
+      - synapse
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Node Agent (example/test only - real nodes run externally)
+  node-agent:
+    image: ghcr.io/ayrtonmansi/synapse-node-agent:latest
+    container_name: synapse-node-agent-stub
+    restart: "no"
+    profiles:
+      - demo  # Don't run in production
+    environment:
+      - ROUTER_URL=ws://router:3002/ws
+      - NODE_WALLET=0xDemoNodeWallet
+      - MODEL_PROFILE=echo-stub
+      - NODE_ID=demo-node-001
+    depends_on:
+      - router
+    networks:
+      - synapse
+
+volumes:
+  gateway-data:
+    driver: local
+  certbot-data:
+    driver: local
+
+networks:
+  synapse:
+    driver: bridge

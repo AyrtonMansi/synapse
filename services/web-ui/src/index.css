@@ -1,19 +1,53 @@
-:root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-  color-scheme: dark;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-primary: #0d0d12;
+    --bg-secondary: #202123;
+    --bg-tertiary: #343541;
+    --bg-hover: #2a2b32;
+    
+    --text-primary: #ececf1;
+    --text-secondary: #8e8ea0;
+    --text-muted: #6e6e80;
+    
+    --border: #4d4d5f;
+    --border-light: #343541;
+    
+    --accent: #22c55e;
+    --accent-hover: #16a34a;
+  }
+  
+  * {
+    @apply box-border;
+  }
+  
+  body {
+    @apply bg-charcoal-950 text-charcoal-100 antialiased;
+    font-family: var(--font-sans);
+  }
 }
 
-body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
-  background: #0a0a0a;
+@layer components {
+  .btn-primary {
+    @apply bg-synapse-600 hover:bg-synapse-700 text-white px-4 py-2 rounded-lg transition-colors;
+  }
+  
+  .btn-secondary {
+    @apply bg-charcoal-800 hover:bg-charcoal-700 text-charcoal-100 px-4 py-2 rounded-lg transition-colors border border-charcoal-700;
+  }
+  
+  .input-field {
+    @apply bg-charcoal-900 border border-charcoal-700 rounded-lg px-4 py-3 text-charcoal-100 placeholder-charcoal-500 focus:outline-none focus:border-synapse-600 focus:ring-1 focus:ring-synapse-600;
+  }
+  
+  .sidebar-link {
+    @apply flex items-center gap-3 px-3 py-2 rounded-lg text-charcoal-400 hover:text-charcoal-100 hover:bg-charcoal-800 transition-colors;
+  }
+  
+  .sidebar-link.active {
+    @apply text-charcoal-100 bg-charcoal-800;
+  }
 }

@@ -36,46 +36,46 @@ export async function verifyReceipt(
   nodePubkey: string
 ): Promise<VerifiedReceipt> {
   const errors: string[] = [];
-  
+
   // 1. Check nonce not reused
   if (await isNonceUsed(receipt.node_id, receipt.nonce)) {
     errors.push('Nonce already used');
   }
-  
+
   // 2. Verify timestamp is reasonable (within 5 minutes)
   const now = Date.now();
   const receiptAge = now - receipt.timestamp;
   if (receiptAge > 300000 || receiptAge < -60000) {
     errors.push(`Receipt timestamp invalid: ${receiptAge}ms old`);
   }
-  
-  // 3. Verify signature (placeholder - actual verification needs ed25519 library)
-  const isValidSignature = await verifyEd25519Signature(receipt, nodePubkey);
+
+  // 3. Verify Ed25519 signature (PRODUCTION-GRADE)
+  const isValidSignature = verifyEd25519Signature(receipt, nodePubkey);
   if (!isValidSignature) {
     errors.push('Invalid signature');
   }
-  
+
   // 4. Verify token counts are reasonable
   if (receipt.tokens_in < 0 || receipt.tokens_out < 0) {
     errors.push('Negative token count');
   }
-  
+
   if (receipt.tokens_in > 1000000 || receipt.tokens_out > 1000000) {
     errors.push('Token count exceeds maximum');
   }
-  
+
   const verified: VerifiedReceipt = {
     ...receipt,
     valid: errors.length === 0,
     errors,
     processed_at: now
   };
-  
+
   // Mark nonce as used if valid
   if (verified.valid) {
     await markNonceUsed(receipt.node_id, receipt.nonce);
   }
-  
+
   return verified;
 }
 
@@ -126,19 +126,47 @@ export function generateNonce(nodeId: string): number {
 }
 
 /**
- * Verify Ed25519 signature (placeholder implementation)
- * In production, use tweetnacl or similar library
+ * Verify Ed25519 signature using tweetnacl
+ * Production-grade signature verification
  */
-async function verifyEd25519Signature(
+import nacl from 'tweetnacl';
+import { Buffer } from 'buffer';
+
+function verifyEd25519Signature(
   receipt: Receipt,
-  pubkey: string
-): Promise<boolean> {
-  // TODO: Implement actual Ed25519 verification
-  // const message = serializeReceipt(receipt);
-  // return nacl.sign.detached.verify(message, receipt.signature, pubkey);
-  
-  // For now, return true (assume valid in development)
-  return true;
+  pubkeyHex: string
+): boolean {
+  try {
+    // Convert hex pubkey to Uint8Array
+    const pubkey = Buffer.from(pubkeyHex.replace('0x', ''), 'hex');
+    if (pubkey.length !== 32) {
+      console.error(`[Receipt] Invalid pubkey length: ${pubkey.length}`);
+      return false;
+    }
+
+    // Convert signature from hex to Uint8Array
+    const signature = Buffer.from(receipt.signature.replace('0x', ''), 'hex');
+    if (signature.length !== 64) {
+      console.error(`[Receipt] Invalid signature length: ${signature.length}`);
+      return false;
+    }
+
+    // Serialize receipt for verification (exclude signature itself)
+    const message = serializeReceipt(receipt);
+    const messageBytes = new TextEncoder().encode(message);
+
+    // Verify signature
+    const isValid = nacl.sign.detached.verify(messageBytes, signature, pubkey);
+    
+    if (!isValid) {
+      console.warn(`[Receipt] Invalid signature for node ${receipt.node_id}`);
+    }
+    
+    return isValid;
+  } catch (error) {
+    console.error(`[Receipt] Signature verification error:`, error);
+    return false;
+  }
 }
 
 /**

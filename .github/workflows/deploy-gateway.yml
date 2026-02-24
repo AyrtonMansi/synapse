@@ -1,0 +1,68 @@
+name: Deploy Synapse Gateway
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'services/web-ui/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'services/web-ui/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./services/web-ui
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        cache-dependency-path: ./services/web-ui/package-lock.json
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Type check
+      run: npx tsc --noEmit
+
+    - name: Build
+      run: npm run build
+      env:
+        VITE_API_URL: /api/v1
+        VITE_DEMO_MODE: true
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    defaults:
+      run:
+        working-directory: ./services/web-ui
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        cache-dependency-path: ./services/web-ui/package-lock.json
+
+    - name: Install Vercel CLI
+      run: npm i -g vercel@latest
+
+    - name: Deploy to Vercel
+      run: |
+        vercel --token ${{ secrets.VERCEL_TOKEN }} --yes --prod
+      env:
+        VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_WEBUI }}

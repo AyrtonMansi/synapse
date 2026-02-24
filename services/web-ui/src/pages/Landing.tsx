@@ -1,6 +1,5 @@
-'use client';
-
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { 
   Terminal, 
@@ -14,7 +13,7 @@ import {
   Loader2
 } from 'lucide-react';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.synapse.sh';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 interface Stats {
   nodes_online: number;
@@ -24,7 +23,8 @@ interface Stats {
   fallback_rate: number;
 }
 
-export default function LandingPage() {
+export function Landing() {
+  const navigate = useNavigate();
   const [mounted, setMounted] = useState(false);
   const [stats, setStats] = useState<Stats>({
     nodes_online: 0,
@@ -44,6 +44,13 @@ export default function LandingPage() {
 
   useEffect(() => {
     setMounted(true);
+    
+    // Check if already has API key
+    const existingKey = localStorage.getItem('synapse_api_key');
+    if (existingKey) {
+      navigate('/gateway');
+      return;
+    }
     
     // Fetch stats
     const fetchStats = async () => {
@@ -67,7 +74,7 @@ export default function LandingPage() {
     fetchStats();
     const interval = setInterval(fetchStats, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [navigate]);
 
   const handleGenerate = async () => {
     if (!input.trim()) return;
@@ -93,11 +100,9 @@ export default function LandingPage() {
       const data = await res.json();
       setApiKey(data.api_key);
       
-      // Store in localStorage for dashboard access
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('synapse_api_key', data.api_key);
-        localStorage.setItem('synapse_wallet', input);
-      }
+      // Store in localStorage
+      localStorage.setItem('synapse_api_key', data.api_key);
+      localStorage.setItem('synapse_wallet', input);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate key');
     } finally {
@@ -114,9 +119,7 @@ export default function LandingPage() {
   };
 
   const handleEnterDashboard = () => {
-    if (typeof window !== 'undefined') {
-      window.location.href = 'https://web-ui-pi-blue.vercel.app/gateway';
-    }
+    navigate('/gateway');
   };
 
   if (!mounted) return null;
@@ -232,7 +235,7 @@ export default function LandingPage() {
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             className="bg-[#111] border border-[#222] rounded-xl w-full max-w-md p-6"
-            onClick={e => e.stopPropagation()}
+            onClick={(e: React.MouseEvent) => e.stopPropagation()}
           >
             {/* Header */}
             <div className="flex items-center gap-3 mb-6">
