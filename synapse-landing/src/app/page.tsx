@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.synapse.sh';
-const GATEWAY_URL = process.env.NEXT_PUBLIC_GATEWAY_URL || 'https://web-pri4fr91w-ayrton-8893s-projects.vercel.app/gateway';
+const GATEWAY_URL = process.env.NEXT_PUBLIC_GATEWAY_URL || 'https://web-9ra40w49z-ayrton-8893s-projects.vercel.app/gateway';
 
 interface Stats {
   nodes_online: number;
