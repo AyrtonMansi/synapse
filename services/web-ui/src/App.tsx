@@ -2,15 +2,16 @@ import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AppShell } from './ui/shell';
 import { ChatView } from './ui/chat';
-import { 
-  KeysPage, 
-  UsagePage, 
-  RunNodePage, 
+import { GatewayOS } from './gateway-os';
+import {
+  KeysPage,
+  UsagePage,
+  RunNodePage,
   HealthPage,
   NodesPage,
   SessionsPage,
   SettingsPage,
-  DocsPage 
+  DocsPage
 } from './ui/pages';
 import { PrivacyPanel } from './ui/privacy';
 import { usePrivacy } from './privacy/usePrivacy';
@@ -20,6 +21,7 @@ import './index.css';
 
 function GatewayRoutes() {
   const [apiKey, setApiKey] = useState<string | null>(null);
+  const [wallet, setWallet] = useState<string>('');
   const [isAdmin] = useState(() =>
     import.meta.env.VITE_ADMIN_MODE === 'true' || localStorage.getItem('synapse_admin') === 'true'
   );
@@ -27,7 +29,9 @@ function GatewayRoutes() {
 
   useEffect(() => {
     const stored = localStorage.getItem('synapse_api_key');
+    const storedWallet = localStorage.getItem('synapse_wallet');
     if (stored) setApiKey(stored);
+    if (storedWallet) setWallet(storedWallet);
   }, []);
 
   if (!apiKey) {
@@ -37,7 +41,8 @@ function GatewayRoutes() {
   return (
     <AppShell apiKey={apiKey} isAdmin={isAdmin}>
       <Routes>
-        <Route path="chat" element={<ChatView apiKey={apiKey} privacy={privacy} />} />
+        <Route path="chat" element={<GatewayOS apiKey={apiKey} wallet={wallet} />} />
+        <Route path="legacy-chat" element={<ChatView apiKey={apiKey} privacy={privacy} />} />
         <Route path="sessions" element={<SessionsPage />} />
         <Route path="keys" element={<KeysPage />} />
         <Route path="usage" element={<UsagePage />} />
