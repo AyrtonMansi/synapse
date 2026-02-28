@@ -46,3 +46,4 @@ openclaw-fleet/
 MineralX_*.pptx
 build_mineralx_deck.py
 create_mineralx_deck.py
+.vercel_token

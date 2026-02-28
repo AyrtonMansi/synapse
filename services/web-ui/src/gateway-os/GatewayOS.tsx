@@ -17,7 +17,8 @@ import { InspectorPanel } from './InspectorPanel';
 import type { Job, JobState, SystemEvent } from './useJobLifecycle';
 import './gateway-os.css';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+// Use Vercel API proxy in production, direct localhost in dev
+const API_URL = import.meta.env.VITE_API_URL || '/api/v1';
 
 interface GatewayOSProps {
   apiKey: string;
@@ -167,7 +168,7 @@ export function GatewayOS({ apiKey, wallet }: GatewayOSProps) {
     const startTime = Date.now();
     
     try {
-      const response = await fetch(`${API_URL}/v1/chat/completions`, {
+      const response = await fetch(`${API_URL}/chat/completions`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiKey}`,

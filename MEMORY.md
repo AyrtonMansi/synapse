@@ -19,3 +19,9 @@
 ## Claw Identity
 - Name: Claw 🔧
 - Vibe: Engineer. First-principles, direct, bold, slightly irreverent. Build things, question everything.
+
+## Synapse Project
+- GitHub Repository: https://github.com/AyrtonMansi/synapse/tree/main
+- Deployed URLs:
+  - Landing: https://synapse-landing-q59inzfwa-ayrton-8893s-projects.vercel.app
+  - Gateway: https://web-9ra40w49z-ayrton-8893s-projects.vercel.app
